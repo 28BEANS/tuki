@@ -43,6 +43,41 @@ DerivedData/
 *.moved-aside
 
 # -------------------------------------------------------------------------
+# Python Backend
+# -------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+*.whl
+.venv/
+venv/
+env/
+.python-version
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# -------------------------------------------------------------------------
+# Docker
+# -------------------------------------------------------------------------
+docker/data/
+docker/logs/
+
+# -------------------------------------------------------------------------
+# Database Data Files (keep examples, ignore actual data)
+# -------------------------------------------------------------------------
+database/osm/*.graphml
+database/osm/*.pkl
+
+# -------------------------------------------------------------------------
 # IDEs and Editors
 # -------------------------------------------------------------------------
 # Visual Studio Code
@@ -62,7 +97,7 @@ DerivedData/
 Thumbs.db
 
 # -------------------------------------------------------------------------
-# Secrets & Environment Variables (Highly Recommended)
+# Secrets & Environment Variables
 # -------------------------------------------------------------------------
 .env
 .env.*
