@@ -25,6 +25,7 @@ dependencies = [
     # --- Validation & Settings ---
     "pydantic>=2.7.0",
     "pydantic-settings>=2.3.0",
+    "email-validator>=2.0.0",
 
     # --- GIS ---
     "geopandas>=1.0.0",
