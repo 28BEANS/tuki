@@ -1,0 +1,72 @@
+# -------------------------------------------------------------------------
+# Flutter / Dart Build Artifacts & Packages
+# -------------------------------------------------------------------------
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.buildlog/
+build/
+ephemeral/
+
+# -------------------------------------------------------------------------
+# Web Specifics
+# -------------------------------------------------------------------------
+.pub/
+/web/node_modules/
+
+# -------------------------------------------------------------------------
+# Android Specifics
+# -------------------------------------------------------------------------
+android/**/local.properties
+android/.gradle/
+android/app/protobuf/
+android/app/libs/
+*.apk
+*.ap_
+*.aab
+
+# -------------------------------------------------------------------------
+# iOS/macOS Specifics
+# -------------------------------------------------------------------------
+ios/.generated/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Pods/
+macos/Flutter/Generated.xcconfig
+macos/Flutter/flutter_export_environment.sh
+macos/Pods/
+.symlinks/
+Pods/
+DerivedData/
+*.moved-aside
+
+# -------------------------------------------------------------------------
+# IDEs and Editors
+# -------------------------------------------------------------------------
+# Visual Studio Code
+.vscode/
+!.vscode/extensions.json
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# -------------------------------------------------------------------------
+# Operating System Files
+# -------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------------------------------------------------------
+# Secrets & Environment Variables (Highly Recommended)
+# -------------------------------------------------------------------------
+.env
+.env.*
+!*.env.example
+android/key.properties
+
+.cursorrules
