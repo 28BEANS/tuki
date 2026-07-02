@@ -1,0 +1,84 @@
+# =============================================================================
+# Tuki CI — Lint, Type Check, Test
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install ruff black
+
+      - name: Ruff check
+        run: ruff check apps/backend/ packages/
+
+      - name: Black check
+        run: black --check apps/backend/ packages/
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -e "apps/backend[dev]"
+          pip install -e "packages/routing_engine[dev]"
+
+      - name: MyPy
+        run: mypy apps/backend/app/ --ignore-missing-imports
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgdal-dev libgeos-dev
+
+      - name: Install dependencies
+        run: |
+          pip install -e "apps/backend[dev]"
+          pip install -e "packages/routing_engine[dev]"
+
+      - name: Run tests
+        run: |
+          cd apps/backend
+          python -m pytest tests/ -v --tb=short
+        env:
+          APP_ENV: testing
+          DATABASE_URL: "postgresql+asyncpg://test:test@localhost:5432/test"
+          SUPABASE_URL: "https://test.supabase.co"
+          SUPABASE_KEY: "test-key"
+          SUPABASE_SERVICE_ROLE_KEY: "test-service-key"

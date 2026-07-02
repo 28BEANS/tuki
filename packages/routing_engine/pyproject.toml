@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tuki-routing-engine"
+version = "0.1.0"
+description = "Standalone multimodal routing engine for Angeles City transportation"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+
+dependencies = [
+    "networkx>=3.3",
+    "shapely>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["routing_engine*"]
