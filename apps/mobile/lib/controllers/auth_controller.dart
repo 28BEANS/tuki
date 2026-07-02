@@ -79,7 +79,8 @@ class AuthController with ChangeNotifier {
   Future<bool> signUp({
     required String email,
     required String password,
-    required String fullName,
+    required String firstName,
+    required String lastName,
   }) async {
     _setLoading(true);
     _clearError();
@@ -99,7 +100,8 @@ class AuthController with ChangeNotifier {
       final profile = await _backendAuthService.syncProfile(
         id: user.id,
         email: email,
-        fullName: fullName.isEmpty ? null : fullName,
+        firstName: firstName.isEmpty ? null : firstName,
+        lastName: lastName.isEmpty ? null : lastName,
       );
 
       _currentUserProfile = profile;
