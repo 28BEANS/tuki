@@ -105,3 +105,6 @@ Thumbs.db
 android/key.properties
 
 .cursorrules
+
+**/inspo/
+**/credentials/
