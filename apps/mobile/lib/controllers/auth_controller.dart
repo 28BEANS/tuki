@@ -106,6 +106,13 @@ class AuthController with ChangeNotifier {
 
       _currentUserProfile = profile;
       return true;
+    } on supabase.AuthApiException catch (e) {
+      if (e.code == 'over_email_send_rate_limit') {
+        _errorMessage = 'Registration limit reached. Please disable "Confirm email" in your Supabase Dashboard (Authentication -> Providers -> Email) to test registration locally without limits.';
+      } else {
+        _errorMessage = e.message;
+      }
+      return false;
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception:', '').trim();
       return false;
