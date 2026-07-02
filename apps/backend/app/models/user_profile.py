@@ -30,7 +30,10 @@ class UserProfile(Base):
     email: Mapped[str] = mapped_column(
         String(320), nullable=False, unique=True, index=True
     )
-    full_name: Mapped[str | None] = mapped_column(
+    first_name: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    last_name: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
