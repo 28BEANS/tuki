@@ -37,6 +37,14 @@ def verify_supabase_token(token: str) -> dict[str, Any]:
             audience="authenticated",
         )
     except JWTError as e:
+        import logging
+        try:
+            unverified_header = jwt.get_unverified_header(token)
+            logging.getLogger("tuki.security").warning(
+                "Unverified header of failed token: %s", unverified_header
+            )
+        except Exception:
+            pass
         raise AuthenticationError(f"Invalid token: {e}") from e
 
     # Check expiration
