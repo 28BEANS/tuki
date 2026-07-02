@@ -13,7 +13,8 @@ class UserProfileCreate(BaseModel):
 
     id: uuid.UUID = Field(..., description="Supabase Auth user UUID")
     email: EmailStr
-    full_name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
 
 
 class UserProfileResponse(BaseModel):
@@ -21,7 +22,8 @@ class UserProfileResponse(BaseModel):
 
     id: uuid.UUID
     email: str
-    full_name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
