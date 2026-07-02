@@ -2,13 +2,15 @@
 class UserProfile {
   final String id;
   final String email;
-  final String? fullName;
+  final String? firstName;
+  final String? lastName;
   final DateTime createdAt;
 
   UserProfile({
     required this.id,
     required this.email,
-    this.fullName,
+    this.firstName,
+    this.lastName,
     required this.createdAt,
   });
 
@@ -16,7 +18,8 @@ class UserProfile {
     return UserProfile(
       id: json['id'] as String,
       email: json['email'] as String,
-      fullName: json['full_name'] as String?,
+      firstName: json['first_name'] as String?,
+      lastName: json['last_name'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -25,7 +28,8 @@ class UserProfile {
     return {
       'id': id,
       'email': email,
-      'full_name': fullName,
+      'first_name': firstName,
+      'last_name': lastName,
       'created_at': createdAt.toIso8601String(),
     };
   }

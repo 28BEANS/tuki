@@ -189,7 +189,8 @@ CREATE INDEX IF NOT EXISTS idx_walking_edges_geometry ON walking_edges USING GIS
 CREATE TABLE IF NOT EXISTS user_profiles (
     id UUID PRIMARY KEY,  -- Matches Supabase Auth user UUID
     email VARCHAR(320) NOT NULL UNIQUE,
-    full_name VARCHAR(255),
+    first_name VARCHAR(255),
+    last_name VARCHAR(255),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

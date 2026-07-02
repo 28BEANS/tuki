@@ -32,7 +32,8 @@ class UserService:
         profile = await self.repo.get_or_create(
             id=data.id,
             email=data.email,
-            full_name=data.full_name,
+            first_name=data.first_name,
+            last_name=data.last_name,
         )
 
         return UserProfileResponse.model_validate(profile)

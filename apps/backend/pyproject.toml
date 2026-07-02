@@ -7,7 +7,7 @@ name = "tuki-backend"
 version = "0.1.0"
 description = "Tuki — Hyperlocal commuting backend for Angeles City"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 
 dependencies = [
@@ -25,6 +25,7 @@ dependencies = [
     # --- Validation & Settings ---
     "pydantic>=2.7.0",
     "pydantic-settings>=2.3.0",
+    "email-validator>=2.0.0",
 
     # --- GIS ---
     "geopandas>=1.0.0",

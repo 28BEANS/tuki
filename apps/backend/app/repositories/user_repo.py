@@ -22,10 +22,16 @@ class UserRepository(BaseRepository[UserProfile]):
         return result.scalar_one_or_none()
 
     async def get_or_create(
-        self, id: UUID, email: str, full_name: str | None = None
+        self,
+        id: UUID,
+        email: str,
+        first_name: str | None = None,
+        last_name: str | None = None,
     ) -> UserProfile:
         """Get existing profile or create one (idempotent signup)."""
         existing = await self.get_by_id(id)
         if existing:
             return existing
-        return await self.create(id=id, email=email, full_name=full_name)
+        return await self.create(
+            id=id, email=email, first_name=first_name, last_name=last_name
+        )

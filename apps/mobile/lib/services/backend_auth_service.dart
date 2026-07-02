@@ -10,7 +10,8 @@ class BackendAuthService {
   Future<UserProfile> syncProfile({
     required String id,
     required String email,
-    String? fullName,
+    String? firstName,
+    String? lastName,
   }) async {
     final url = Uri.parse('${AppConfig.backendUrl}/api/v1/auth/signup');
     
@@ -22,7 +23,8 @@ class BackendAuthService {
       body: jsonEncode({
         'id': id,
         'email': email,
-        'full_name': fullName,
+        'first_name': firstName,
+        'last_name': lastName,
       }),
     );
 

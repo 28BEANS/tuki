@@ -40,7 +40,7 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               Text(
-                'Welcome, ${user?.fullName ?? "Commuter"}!',
+                'Welcome, ${user?.firstName ?? "Commuter"} ${user?.lastName ?? ""}!',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,

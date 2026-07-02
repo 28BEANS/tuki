@@ -13,7 +13,8 @@ class RegistrationScreen extends StatefulWidget {
 
 class _RegistrationScreenState extends State<RegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
@@ -23,7 +24,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -35,12 +37,14 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       final authController = Provider.of<AuthController>(context, listen: false);
       final email = _emailController.text.trim();
       final password = _passwordController.text;
-      final fullName = _nameController.text.trim();
+      final firstName = _firstNameController.text.trim();
+      final lastName = _lastNameController.text.trim();
 
       final success = await authController.signUp(
         email: email,
         password: password,
-        fullName: fullName,
+        firstName: firstName,
+        lastName: lastName,
       );
 
       if (mounted) {
@@ -169,30 +173,73 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                             ),
                             const SizedBox(height: 24),
                             
-                            // Full Name label & input
-                            Text(
-                              'Full Name',
-                              style: GoogleFonts.outfit(
-                                fontWeight: FontWeight.w600,
-                                color: TukiTheme.darkText,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            TextFormField(
-                              controller: _nameController,
-                              keyboardType: TextInputType.name,
-                              style: GoogleFonts.outfit(color: TukiTheme.darkText, fontSize: 15),
-                              decoration: const InputDecoration(
-                                prefixIcon: Icon(Icons.person_outline, size: 22),
-                                hintText: 'John Doe',
-                              ),
-                              validator: (value) {
-                                if (value == null || value.trim().isEmpty) {
-                                  return 'Please enter your name';
-                                }
-                                return null;
-                              },
+                            // First Name & Last Name side-by-side
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'First Name',
+                                        style: GoogleFonts.outfit(
+                                          fontWeight: FontWeight.w600,
+                                          color: TukiTheme.darkText,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      TextFormField(
+                                        controller: _firstNameController,
+                                        keyboardType: TextInputType.name,
+                                        style: GoogleFonts.outfit(color: TukiTheme.darkText, fontSize: 15),
+                                        decoration: const InputDecoration(
+                                          prefixIcon: Icon(Icons.person_outline, size: 22),
+                                          hintText: 'John',
+                                        ),
+                                        validator: (value) {
+                                          if (value == null || value.trim().isEmpty) {
+                                            return 'Required';
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Last Name',
+                                        style: GoogleFonts.outfit(
+                                          fontWeight: FontWeight.w600,
+                                          color: TukiTheme.darkText,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      TextFormField(
+                                        controller: _lastNameController,
+                                        keyboardType: TextInputType.name,
+                                        style: GoogleFonts.outfit(color: TukiTheme.darkText, fontSize: 15),
+                                        decoration: const InputDecoration(
+                                          prefixIcon: Icon(Icons.person_outline, size: 22),
+                                          hintText: 'Doe',
+                                        ),
+                                        validator: (value) {
+                                          if (value == null || value.trim().isEmpty) {
+                                            return 'Required';
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 16),
                             
