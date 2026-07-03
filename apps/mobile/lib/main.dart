@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'controllers/auth_controller.dart';
 import 'core/config.dart';
 import 'core/theme.dart';
-import 'screens/home_screen.dart';
+import 'screens/main_shell.dart';
 import 'screens/login_screen.dart';
 import 'services/backend_auth_service.dart';
 import 'services/supabase_service.dart';
@@ -74,7 +74,7 @@ class AuthGate extends StatelessWidget {
     }
 
     if (authController.isAuthenticated) {
-      return const HomeScreen();
+      return const MainShell();
     } else {
       return const LoginScreen();
     }
