@@ -14,6 +14,7 @@ class AuthController with ChangeNotifier {
   String? _errorMessage;
   UserProfile? _currentUserProfile;
   StreamSubscription<supabase.AuthState>? _authSubscription;
+  Future<void>? _activeLoadFuture;
 
   AuthController(
     this._supabaseService,
@@ -61,18 +62,28 @@ class AuthController with ChangeNotifier {
 
   /// Load user profile from the FastAPI backend.
   Future<void> _loadProfile(String token) async {
-    _setLoading(true);
-    _clearError();
-    try {
-      final profile = await _backendAuthService.getProfile(jwtToken: token);
-      _currentUserProfile = profile;
-    } catch (e) {
-      _errorMessage = 'Failed to load backend user profile: ${e.toString()}';
-      // If we fail to load profile, we might still have a Supabase user, but backend sync is broken.
-      _currentUserProfile = null;
-    } finally {
-      _setLoading(false);
+    if (_activeLoadFuture != null) {
+      return _activeLoadFuture;
     }
+
+    final future = () async {
+      _setLoading(true);
+      _clearError();
+      try {
+        final profile = await _backendAuthService.getProfile(jwtToken: token);
+        _currentUserProfile = profile;
+      } catch (e) {
+        _errorMessage = 'Failed to load backend user profile: ${e.toString()}';
+        // If we fail to load profile, we might still have a Supabase user, but backend sync is broken.
+        _currentUserProfile = null;
+      } finally {
+        _setLoading(false);
+        _activeLoadFuture = null;
+      }
+    }();
+
+    _activeLoadFuture = future;
+    return future;
   }
 
   /// Sign up a user with email and password, then sync profile to backend.
