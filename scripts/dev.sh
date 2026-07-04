@@ -24,7 +24,7 @@ MOBILE_DIR="$ROOT_DIR/apps/mobile"
 # ── Defaults ──────────────────────────────────────────────────────────────────
 RUN_BACKEND=true
 RUN_MOBILE=true
-FLUTTER_DEVICE=""
+FLUTTER_DEVICE="chrome"
 BACKEND_PORT=8000
 
 # ── Colors ────────────────────────────────────────────────────────────────────

@@ -67,7 +67,7 @@ The script will:
 - Create the Python virtual environment if it doesn't exist
 - Install backend dependencies automatically
 - Start the FastAPI backend with hot-reload on `http://localhost:8000`
-- Launch the Flutter app on an auto-detected device/emulator
+- Launch the Flutter app on **Chrome** (default) — override with `--device`
 
 **Options:**
 
