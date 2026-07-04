@@ -1,0 +1,89 @@
+library;
+
+class RouteSegment {
+  final String mode; // 'jeep' | 'walk' | 'tricycle'
+  final String? route;
+  final String? routeColor;
+  final String? boardAt;
+  final String? alightAt;
+  final double? distanceM;
+  final double? durationMin;
+  final double? fare;
+
+  const RouteSegment({
+    required this.mode,
+    this.route,
+    this.routeColor,
+    this.boardAt,
+    this.alightAt,
+    this.distanceM,
+    this.durationMin,
+    this.fare,
+  });
+
+  factory RouteSegment.fromJson(Map<String, dynamic> json) {
+    return RouteSegment(
+      mode: json['mode'] as String,
+      route: json['route'] as String?,
+      routeColor: json['route_color'] as String?,
+      boardAt: json['board_at'] as String?,
+      alightAt: json['alight_at'] as String?,
+      distanceM: (json['distance_m'] as num?)?.toDouble(),
+      durationMin: (json['duration_min'] as num?)?.toDouble(),
+      fare: (json['fare'] as num?)?.toDouble(),
+    );
+  }
+}
+
+class NavigationInstruction {
+  final int step;
+  final String instruction;
+  final String mode;
+
+  const NavigationInstruction({
+    required this.step,
+    required this.instruction,
+    required this.mode,
+  });
+
+  factory NavigationInstruction.fromJson(Map<String, dynamic> json) {
+    return NavigationInstruction(
+      step: json['step'] as int,
+      instruction: json['instruction'] as String,
+      mode: json['mode'] as String,
+    );
+  }
+}
+
+class RouteResult {
+  final double totalFare;
+  final double totalDistanceM;
+  final double travelTimeMin;
+  final List<RouteSegment> segments;
+  final List<NavigationInstruction> instructions;
+  final int transfers;
+
+  const RouteResult({
+    required this.totalFare,
+    required this.totalDistanceM,
+    required this.travelTimeMin,
+    required this.segments,
+    required this.instructions,
+    required this.transfers,
+  });
+
+  factory RouteResult.fromJson(Map<String, dynamic> json) {
+    return RouteResult(
+      totalFare: (json['total_fare'] as num).toDouble(),
+      totalDistanceM: (json['total_distance_m'] as num).toDouble(),
+      travelTimeMin: (json['travel_time_min'] as num).toDouble(),
+      segments: (json['segments'] as List<dynamic>)
+          .map((e) => RouteSegment.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      instructions: (json['instructions'] as List<dynamic>)
+          .map((e) => NavigationInstruction.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      transfers: json['transfers'] as int,
+    );
+  }
+}
