@@ -55,17 +55,70 @@ tuki/
 
 ## Getting Started
 
-### Backend
+### Quick Start (Recommended)
+
+Run both the backend and the mobile app with a single command:
+
+```bash
+./scripts/dev.sh
+```
+
+The script will:
+- Create the Python virtual environment if it doesn't exist
+- Install backend dependencies automatically
+- Start the FastAPI backend with hot-reload on `http://localhost:8000`
+- Launch the Flutter app on **Chrome** (default) — override with `--device`
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--backend-only` | Start only the FastAPI backend |
+| `--mobile-only` | Start only the Flutter mobile app |
+| `--device <id>` | Target a specific Flutter device or emulator |
+| `--port <port>` | Override the backend port (default: `8000`) |
+| `-h, --help` | Show usage information |
+
+**Examples:**
+
+```bash
+# Start everything (default)
+./scripts/dev.sh
+
+# Backend only
+./scripts/dev.sh --backend-only
+
+# Mobile only (assumes backend is already running)
+./scripts/dev.sh --mobile-only
+
+# Target a specific simulator
+./scripts/dev.sh --device "iPhone 15 Pro"
+
+# Use a different backend port
+./scripts/dev.sh --port 9000
+```
+
+> **Tip:** Press `Ctrl+C` to gracefully stop all running services at once.
+
+---
+
+### Manual Setup
+
+If you prefer to run services individually:
+
+#### Backend
 
 ```bash
 cd apps/backend
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 uvicorn app.main:app --reload
 ```
 
-### Mobile
+API docs available at `http://localhost:8000/docs`.
+
+#### Mobile
 
 ```bash
 cd apps/mobile
@@ -73,7 +126,7 @@ flutter pub get
 flutter run
 ```
 
-### Docker
+#### Docker (full stack with PostGIS)
 
 ```bash
 docker compose -f docker/docker-compose.yml up
