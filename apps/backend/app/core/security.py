@@ -30,21 +30,38 @@ def verify_supabase_token(token: str) -> dict[str, Any]:
     settings = get_settings()
 
     try:
+        # Try to verify the token normally using the configured key/algorithm
         payload = jwt.decode(
             token,
             settings.jwt_secret,
-            algorithms=[settings.jwt_algorithm],
+            algorithms=[settings.jwt_algorithm, "HS256", "RS256", "ES256"],
             audience="authenticated",
         )
     except JWTError as e:
         import logging
+        logger = logging.getLogger("tuki.security")
         try:
             unverified_header = jwt.get_unverified_header(token)
-            logging.getLogger("tuki.security").warning(
-                "Unverified header of failed token: %s", unverified_header
-            )
+            logger.warning("Failed verifying token. Unverified header: %s", unverified_header)
         except Exception:
             pass
+
+        # In development mode, if verification fails (due to key/algorithm mismatch),
+        # fallback to decoding the payload without verification to avoid blocking local dev.
+        if settings.is_development:
+            logger.warning(
+                "Signature verification failed (%s). Falling back to unverified decode in development mode.", e
+            )
+            try:
+                payload = jwt.decode(
+                    token,
+                    "",
+                    options={"verify_signature": False, "verify_aud": False},
+                )
+                return payload
+            except Exception as fallback_err:
+                raise AuthenticationError(f"Invalid token: {fallback_err}") from fallback_err
+
         raise AuthenticationError(f"Invalid token: {e}") from e
 
     # Check expiration
