@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:latlong2/latlong.dart';
 import '../core/theme.dart';
 import '../models/landmark.dart';
 import '../models/route_result.dart';
@@ -8,8 +10,14 @@ import '../services/landmark_service.dart';
 import '../services/route_service.dart';
 
 // ── Hard-coded origin fallback coords (HAU, Angeles City) ───────────────────
-const double _kDefaultLat = 15.1450;
-const double _kDefaultLon = 120.5887;
+const double _kDefaultLat = 15.1285;
+const double _kDefaultLon = 120.5970;
+
+// Angeles City boundaries to restrict panning
+final LatLngBounds _kAngelesBounds = LatLngBounds(
+  const LatLng(15.08, 120.48),
+  const LatLng(15.22, 120.65),
+);
 
 /// The three phases of the Plan Trip user flow.
 enum _TripPhase { input, preview, details }
@@ -31,19 +39,17 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
   final _originController = TextEditingController(text: 'Current Location');
   final _destController = TextEditingController();
 
+  Landmark? _selectedOrigin;
   Landmark? _selectedDest;
   List<Landmark> _suggestions = [];
   bool _isSearching = false;
   Timer? _debounce;
+  String _activeSearchField = 'destination'; // 'origin' | 'destination'
 
   // ── Route result state ──────────────────────────────────────────────────
   RouteResult? _routeResult;
   bool _isCalculating = false;
   String? _routeError;
-
-  // ── Origin coords (would come from GPS in production) ───────────────────
-  final double _originLat = _kDefaultLat;
-  final double _originLon = _kDefaultLon;
 
   @override
   void dispose() {
@@ -54,13 +60,21 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
   }
 
   // ── Search ───────────────────────────────────────────────────────────────
-  void _onDestChanged(String query) {
+  void _onSearchChanged(String query, String field) {
+    setState(() {
+      _activeSearchField = field;
+    });
+
     _debounce?.cancel();
     if (query.trim().isEmpty) {
       setState(() {
         _suggestions = [];
         _isSearching = false;
-        _selectedDest = null;
+        if (field == 'origin') {
+          _selectedOrigin = null;
+        } else {
+          _selectedDest = null;
+        }
       });
       return;
     }
@@ -78,10 +92,15 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     });
   }
 
-  void _selectDestination(Landmark landmark) {
+  void _selectSuggestion(Landmark landmark) {
     setState(() {
-      _selectedDest = landmark;
-      _destController.text = landmark.name;
+      if (_activeSearchField == 'origin') {
+        _selectedOrigin = landmark;
+        _originController.text = landmark.name;
+      } else {
+        _selectedDest = landmark;
+        _destController.text = landmark.name;
+      }
       _suggestions = [];
     });
   }
@@ -100,10 +119,13 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
       _routeError = null;
     });
 
+    final originLat = _selectedOrigin?.latitude ?? _kDefaultLat;
+    final originLon = _selectedOrigin?.longitude ?? _kDefaultLon;
+
     try {
       final result = await _routeService.calculateRoute(
-        originLat: _originLat,
-        originLon: _originLon,
+        originLat: originLat,
+        originLon: originLon,
         destinationLat: _selectedDest!.latitude,
         destinationLon: _selectedDest!.longitude,
       );
@@ -123,6 +145,165 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     } finally {
       if (mounted) setState(() => _isCalculating = false);
     }
+  }
+
+  // ── Color parsing helper for map polylines ──────────────────────────────
+  Color _parseRouteColor(String? colorName) {
+    if (colorName == null) return TukiTheme.primaryOrange;
+    switch (colorName.toLowerCase()) {
+      case 'lavender':
+        return Colors.purple.shade300;
+      case 'grey':
+      case 'gray':
+        return Colors.grey.shade600;
+      case 'sand':
+        return const Color(0xFFC2B280);
+      case 'white':
+        return Colors.grey.shade400;
+      case 'maroon':
+        return const Color(0xFF800000);
+      case 'green':
+        return Colors.green.shade600;
+      case 'blue':
+        return Colors.blue.shade600;
+      case 'orange':
+        return Colors.orange.shade700;
+      case 'yellow':
+        return Colors.yellow.shade700;
+      case 'pink':
+        return Colors.pink.shade300;
+      default:
+        return TukiTheme.primaryOrange;
+    }
+  }
+
+  // ── Reusable Bounded Map Widget ──────────────────────────────────────────
+  Widget _buildMapWidget({RouteResult? routeResult}) {
+    final startLatLng = LatLng(
+      _selectedOrigin?.latitude ?? _kDefaultLat,
+      _selectedOrigin?.longitude ?? _kDefaultLon,
+    );
+
+    final endLatLng = _selectedDest != null
+        ? LatLng(_selectedDest!.latitude, _selectedDest!.longitude)
+        : null;
+
+    final markers = <Marker>[];
+
+    // Starting location marker
+    markers.add(
+      Marker(
+        point: startLatLng,
+        width: 40,
+        height: 40,
+        child: const Icon(
+          Icons.my_location_rounded,
+          color: Colors.blue,
+          size: 28,
+        ),
+      ),
+    );
+
+    // Destination marker
+    if (endLatLng != null) {
+      markers.add(
+        Marker(
+          point: endLatLng,
+          width: 40,
+          height: 40,
+          child: const Icon(
+            Icons.location_on_rounded,
+            color: Colors.red,
+            size: 32,
+          ),
+        ),
+      );
+    }
+
+    final polylines = <Polyline>[];
+
+    if (routeResult != null) {
+      for (final segment in routeResult.segments) {
+        if (segment.boardLat != null &&
+            segment.boardLon != null &&
+            segment.alightLat != null &&
+            segment.alightLon != null) {
+          final points = [
+            LatLng(segment.boardLat!, segment.boardLon!),
+            LatLng(segment.alightLat!, segment.alightLon!),
+          ];
+
+          final color = segment.mode == 'walk'
+              ? Colors.grey
+              : segment.mode == 'tricycle'
+                  ? Colors.green
+                  : _parseRouteColor(segment.routeColor);
+
+          polylines.add(
+            Polyline(
+              points: points,
+              strokeWidth: 4.5,
+              color: color,
+              pattern: segment.mode == 'walk'
+                  ? const StrokePattern.dotted()
+                  : const StrokePattern.solid(),
+            ),
+          );
+
+          // Add small markers for intermediate boarding/alighting stops
+          if (segment.mode == 'jeep') {
+            markers.add(
+              Marker(
+                point: points.first,
+                width: 14,
+                height: 14,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: color, width: 3),
+                  ),
+                ),
+              ),
+            );
+            markers.add(
+              Marker(
+                point: points.last,
+                width: 14,
+                height: 14,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: color, width: 3),
+                  ),
+                ),
+              ),
+            );
+          }
+        }
+      }
+    }
+
+    return FlutterMap(
+      options: MapOptions(
+        initialCenter: startLatLng,
+        initialZoom: 13.5,
+        minZoom: 11.0,
+        maxZoom: 18.0,
+        cameraConstraint: CameraConstraint.containCenter(
+          bounds: _kAngelesBounds,
+        ),
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+          userAgentPackageName: 'com.tuki.app',
+        ),
+        PolylineLayer(polylines: polylines),
+        MarkerLayer(markers: markers),
+      ],
+    );
   }
 
   // ── Navigation ────────────────────────────────────────────────────────────
@@ -165,10 +346,11 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
           suggestions: _suggestions,
           isSearching: _isSearching,
           isCalculating: _isCalculating,
-          onDestChanged: _onDestChanged,
-          onSelectDest: _selectDestination,
+          onSearchChanged: _onSearchChanged,
+          onSelectSuggestion: _selectSuggestion,
           onFindRoute: _findRoute,
           selectedDest: _selectedDest,
+          mapWidget: _buildMapWidget(),
         );
       case _TripPhase.preview:
         return _PreviewPhase(
@@ -178,6 +360,7 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
           destName: _selectedDest?.name ?? _destController.text,
           onBack: _goBack,
           onViewDetails: () => setState(() => _phase = _TripPhase.details),
+          mapWidget: _buildMapWidget(routeResult: _routeResult),
         );
       case _TripPhase.details:
         return _DetailsPhase(
@@ -185,6 +368,7 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
           result: _routeResult!,
           destName: _selectedDest?.name ?? _destController.text,
           onClose: _goBack,
+          mapWidget: _buildMapWidget(routeResult: _routeResult),
         );
     }
   }
@@ -200,10 +384,11 @@ class _InputPhase extends StatelessWidget {
   final List<Landmark> suggestions;
   final bool isSearching;
   final bool isCalculating;
-  final ValueChanged<String> onDestChanged;
-  final ValueChanged<Landmark> onSelectDest;
+  final void Function(String query, String field) onSearchChanged;
+  final ValueChanged<Landmark> onSelectSuggestion;
   final VoidCallback onFindRoute;
   final Landmark? selectedDest;
+  final Widget mapWidget;
 
   const _InputPhase({
     super.key,
@@ -212,10 +397,11 @@ class _InputPhase extends StatelessWidget {
     required this.suggestions,
     required this.isSearching,
     required this.isCalculating,
-    required this.onDestChanged,
-    required this.onSelectDest,
+    required this.onSearchChanged,
+    required this.onSelectSuggestion,
     required this.onFindRoute,
     required this.selectedDest,
+    required this.mapWidget,
   });
 
   @override
@@ -243,8 +429,8 @@ class _InputPhase extends StatelessWidget {
                   Container(
                     width: 38,
                     height: 38,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0F0F0),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF0F0F0),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.person_rounded,
@@ -285,9 +471,9 @@ class _InputPhase extends StatelessWidget {
                         controller: originController,
                         icon: Icons.my_location_rounded,
                         iconColor: const Color(0xFFFFC629),
-                        readOnly: true,
-                        hintText: 'Current Location',
-                        onChanged: null,
+                        readOnly: false,
+                        hintText: 'Starting location...',
+                        onChanged: (val) => onSearchChanged(val, 'origin'),
                       ),
                       const SizedBox(height: 8),
                       const Divider(height: 1),
@@ -299,7 +485,7 @@ class _InputPhase extends StatelessWidget {
                         iconColor: const Color(0xFFFFC629),
                         readOnly: false,
                         hintText: 'Where to?',
-                        onChanged: onDestChanged,
+                        onChanged: (val) => onSearchChanged(val, 'destination'),
                         trailing: isSearching
                             ? const SizedBox(
                                 width: 18,
@@ -309,14 +495,14 @@ class _InputPhase extends StatelessWidget {
                                   color: TukiTheme.primaryOrange,
                                 ),
                               )
-                            : Icon(Icons.mic_rounded,
-                                color: const Color(0xFFFFC629), size: 22),
+                            : const Icon(Icons.mic_rounded,
+                                color: Color(0xFFFFC629), size: 22),
                       ),
                     ],
                   ),
                 ),
 
-                // ── Map placeholder ──────────────────────────────────────────
+                // ── Google Maps bounded view ─────────────────────────────────
                 Expanded(
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -324,24 +510,8 @@ class _InputPhase extends StatelessWidget {
                       color: const Color(0xFFEEEEEE),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.location_on_rounded,
-                              color: const Color(0xFFFFC629), size: 48),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Map View',
-                            style: GoogleFonts.outfit(
-                              fontSize: 13,
-                              fontStyle: FontStyle.italic,
-                              color: TukiTheme.lightText,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: mapWidget,
                   ),
                 ),
 
@@ -387,7 +557,7 @@ class _InputPhase extends StatelessWidget {
                                     fontSize: 12,
                                     color: TukiTheme.lightText))
                             : null,
-                        onTap: () => onSelectDest(lm),
+                        onTap: () => onSelectSuggestion(lm),
                       );
                     },
                   ),
@@ -442,6 +612,7 @@ class _PreviewPhase extends StatelessWidget {
   final String destName;
   final VoidCallback onBack;
   final VoidCallback onViewDetails;
+  final Widget mapWidget;
 
   const _PreviewPhase({
     super.key,
@@ -450,6 +621,7 @@ class _PreviewPhase extends StatelessWidget {
     required this.destName,
     required this.onBack,
     required this.onViewDetails,
+    required this.mapWidget,
   });
 
   @override
@@ -498,12 +670,11 @@ class _PreviewPhase extends StatelessWidget {
             ),
           ),
 
-          // ── Origin chip ───────────────────────────────────────────────────
+          // ── Origin/Dest chip summary ──────────────────────────────────────
           Container(
             width: double.infinity,
             margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(30),
@@ -519,10 +690,10 @@ class _PreviewPhase extends StatelessWidget {
               children: [
                 const Icon(Icons.my_location_rounded,
                     color: Color(0xFF9B2600), size: 18),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    originName,
+                    '$originName → $destName',
                     style: GoogleFonts.outfit(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -535,40 +706,11 @@ class _PreviewPhase extends StatelessWidget {
             ),
           ),
 
-          // ── Map placeholder ────────────────────────────────────────────────
+          // ── Bounded Map View ───────────────────────────────────────────────
           Expanded(
             child: Container(
               margin: const EdgeInsets.fromLTRB(0, 12, 0, 0),
-              decoration: const BoxDecoration(
-                color: Color(0xFFE8E8E8),
-              ),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.map_outlined,
-                        color: const Color(0xFFFFC629).withValues(alpha: 0.7),
-                        size: 52),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Route Map Preview',
-                      style: GoogleFonts.outfit(
-                        fontSize: 13,
-                        fontStyle: FontStyle.italic,
-                        color: TukiTheme.lightText,
-                      ),
-                    ),
-                    Text(
-                      '$originName → $destName',
-                      style: GoogleFonts.outfit(
-                        fontSize: 12,
-                        color: TukiTheme.lightText,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
+              child: mapWidget,
             ),
           ),
 
@@ -603,9 +745,8 @@ class _PreviewPhase extends StatelessWidget {
                   Wrap(
                     spacing: 8,
                     children: [
-                      // Show 'Walk' chip if any walk segments
                       if (result.segments.any((s) => s.mode == 'walk'))
-                        _ModeChip(
+                        const _ModeChip(
                           icon: Icons.directions_walk_rounded,
                           label: 'Walk',
                         ),
@@ -614,11 +755,11 @@ class _PreviewPhase extends StatelessWidget {
                           icon: Icons.directions_bus_rounded,
                           label: result.segments
                                   .firstWhere((s) => s.mode == 'jeep')
-                                  .routeColor ??
+                                  .route ??
                               'Jeep',
                         ),
                       if (result.segments.any((s) => s.mode == 'tricycle'))
-                        _ModeChip(
+                        const _ModeChip(
                           icon: Icons.electric_rickshaw_rounded,
                           label: 'Tricycle',
                         ),
@@ -728,12 +869,14 @@ class _DetailsPhase extends StatelessWidget {
   final RouteResult result;
   final String destName;
   final VoidCallback onClose;
+  final Widget mapWidget;
 
   const _DetailsPhase({
     super.key,
     required this.result,
     required this.destName,
     required this.onClose,
+    required this.mapWidget,
   });
 
   @override
@@ -741,22 +884,10 @@ class _DetailsPhase extends StatelessWidget {
     return SafeArea(
       child: Column(
         children: [
-          // ── Map placeholder (same reserved space as preview) ───────────────
+          // ── Map View (restricted) ──────────────────────────────────────────
           Expanded(
             flex: 2,
-            child: Container(
-              color: const Color(0xFFE8E8E8),
-              child: Center(
-                child: Text(
-                  'Route Map Preview',
-                  style: GoogleFonts.outfit(
-                    fontSize: 13,
-                    fontStyle: FontStyle.italic,
-                    color: TukiTheme.lightText,
-                  ),
-                ),
-              ),
-            ),
+            child: mapWidget,
           ),
 
           // ── Details bottom sheet ──────────────────────────────────────────
@@ -837,13 +968,11 @@ class _DetailsPhase extends StatelessWidget {
                   // ── Step-by-step timeline ──────────────────────────────────
                   Expanded(
                     child: ListView.builder(
-                      padding:
-                          const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                       itemCount: result.instructions.length,
                       itemBuilder: (context, i) {
                         final instr = result.instructions[i];
-                        final isLast =
-                            i == result.instructions.length - 1;
+                        final isLast = i == result.instructions.length - 1;
                         return _TimelineStep(
                           instruction: instr,
                           isLast: isLast,
@@ -1010,8 +1139,7 @@ class _TimelineStep extends StatelessWidget {
                     color: config.bgColor,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(config.icon,
-                      color: config.iconColor, size: 20),
+                  child: Icon(config.icon, color: config.iconColor, size: 20),
                 ),
                 if (!isLast)
                   Expanded(
@@ -1037,9 +1165,7 @@ class _TimelineStep extends StatelessWidget {
                     instruction.instruction,
                     style: GoogleFonts.outfit(
                       fontSize: 14,
-                      fontWeight: isLast
-                          ? FontWeight.w800
-                          : FontWeight.w600,
+                      fontWeight: isLast ? FontWeight.w800 : FontWeight.w600,
                       color: TukiTheme.darkText,
                     ),
                   ),
@@ -1064,33 +1190,33 @@ class _TimelineStep extends StatelessWidget {
 
   _StepConfig _stepConfig(String mode, bool isLast) {
     if (isLast) {
-      return _StepConfig(
+      return const _StepConfig(
         icon: Icons.location_on_rounded,
-        bgColor: const Color(0xFF9B2600),
+        bgColor: Color(0xFF9B2600),
         iconColor: Colors.white,
         subLabel: null,
       );
     }
     switch (mode) {
       case 'jeep':
-        return _StepConfig(
+        return const _StepConfig(
           icon: Icons.directions_bus_rounded,
-          bgColor: const Color(0xFFFFC629),
-          iconColor: const Color(0xFF5A3200),
+          bgColor: Color(0xFFFFC629),
+          iconColor: Color(0xFF5A3200),
           subLabel: null,
         );
       case 'tricycle':
-        return _StepConfig(
+        return const _StepConfig(
           icon: Icons.electric_rickshaw_rounded,
-          bgColor: const Color(0xFF34A853),
+          bgColor: Color(0xFF34A853),
           iconColor: Colors.white,
           subLabel: null,
         );
       default: // walk / transfer
-        return _StepConfig(
+        return const _StepConfig(
           icon: Icons.directions_walk_rounded,
-          bgColor: const Color(0xFFFFC629),
-          iconColor: const Color(0xFF5A3200),
+          bgColor: Color(0xFFFFC629),
+          iconColor: Color(0xFF5A3200),
           subLabel: null,
         );
     }
