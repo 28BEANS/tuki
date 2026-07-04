@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "tuki-routing-engine"
 version = "0.1.0"
 description = "Standalone multimodal routing engine for Angeles City transportation"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 
 dependencies = [

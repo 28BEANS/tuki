@@ -16,6 +16,7 @@ from app.core.config import get_settings
 from app.db.session import close_db, init_db
 from app.middleware.error_handler import ErrorHandlerMiddleware
 from app.middleware.logging import LoggingMiddleware
+from app.services.graph_service import graph_service
 
 # Configure logging
 logging.basicConfig(
@@ -38,6 +39,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Database connection pool initialized")
     except Exception as e:
         logger.warning("Database connection failed (will retry on first request): %s", e)
+
+    # Build transport graph once and cache in memory
+    await graph_service.initialise()
 
     yield
 

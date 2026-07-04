@@ -130,6 +130,14 @@ start_backend() {
     log_info "Backend dependencies already installed."
   fi
 
+  # 3. Always ensure the local routing_engine package is installed (editable)
+  #    This is a workspace-local package not available on PyPI.
+  if ! "$VENV_PYTHON" -c "import routing_engine" 2>/dev/null; then
+    log_info "Installing local routing_engine package..."
+    "$VENV_PIP" install --quiet -e "$ROOT_DIR/packages/routing_engine/"
+    log_success "routing_engine installed."
+  fi
+
   log_info "Backend starting on http://localhost:${BACKEND_PORT}"
   log_info "API docs:     http://localhost:${BACKEND_PORT}/docs"
 
