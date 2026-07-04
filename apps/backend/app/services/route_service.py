@@ -24,8 +24,12 @@ logger = logging.getLogger("tuki.services.route")
 _MOCK_SEGMENTS = [
     RouteSegment(
         mode="walk",
-        board_at=None,
-        alight_at=None,
+        board_at="Your Starting Location",
+        board_lat=15.1320,
+        board_lon=120.5950,
+        alight_at="Holy Angel University",
+        alight_lat=15.1285,
+        alight_lon=120.5970,
         distance_m=250,
         duration_min=3,
         fare=0,
@@ -35,19 +39,35 @@ _MOCK_SEGMENTS = [
         route="Checkpoint – Holy – Highway",
         route_color="Lavender",
         board_at="Holy Angel University",
+        board_lat=15.1285,
+        board_lon=120.5970,
         alight_at="Jenra Mall",
+        alight_lat=15.1370,
+        alight_lon=120.5915,
         distance_m=3200,
         duration_min=12,
         fare=13,
     ),
     RouteSegment(
         mode="walk",
+        board_at="Jenra Mall",
+        board_lat=15.1370,
+        board_lon=120.5915,
+        alight_at="Tricycle Terminal",
+        alight_lat=15.1380,
+        alight_lon=120.5900,
         distance_m=180,
         duration_min=2,
         fare=0,
     ),
     RouteSegment(
         mode="tricycle",
+        board_at="Tricycle Terminal",
+        board_lat=15.1380,
+        board_lon=120.5900,
+        alight_at="Robinsons Starmills",
+        alight_lat=15.1435,
+        alight_lon=120.5900,
         distance_m=800,
         duration_min=5,
         fare=25,
@@ -186,6 +206,14 @@ class RouteService:
         # Map routing engine segments → API schema segments
         segments: list[RouteSegment] = []
         for seg in route_result.segments:
+            board_node = seg.nodes[0] if seg.nodes else None
+            alight_node = seg.nodes[-1] if seg.nodes else None
+
+            board_lat = graph.nodes[board_node].get("latitude") if board_node else None
+            board_lon = graph.nodes[board_node].get("longitude") if board_node else None
+            alight_lat = graph.nodes[alight_node].get("latitude") if alight_node else None
+            alight_lon = graph.nodes[alight_node].get("longitude") if alight_node else None
+
             if seg.mode == TransportMode.TRANSFER:
                 # Represent transfers as short walk segments in the API
                 segments.append(
@@ -194,6 +222,12 @@ class RouteService:
                         distance_m=seg.distance_m,
                         duration_min=seg.duration_min,
                         fare=0,
+                        board_at=seg.board_at,
+                        board_lat=board_lat,
+                        board_lon=board_lon,
+                        alight_at=seg.alight_at,
+                        alight_lat=alight_lat,
+                        alight_lon=alight_lon,
                     )
                 )
             else:
@@ -203,7 +237,11 @@ class RouteService:
                         route=seg.route_name,
                         route_color=seg.route_color,
                         board_at=seg.board_at,
+                        board_lat=board_lat,
+                        board_lon=board_lon,
                         alight_at=seg.alight_at,
+                        alight_lat=alight_lat,
+                        alight_lon=alight_lon,
                         distance_m=seg.distance_m,
                         duration_min=seg.duration_min,
                         fare=seg.fare,
