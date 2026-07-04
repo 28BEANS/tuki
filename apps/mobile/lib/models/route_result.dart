@@ -5,7 +5,11 @@ class RouteSegment {
   final String? route;
   final String? routeColor;
   final String? boardAt;
+  final double? boardLat;
+  final double? boardLon;
   final String? alightAt;
+  final double? alightLat;
+  final double? alightLon;
   final double? distanceM;
   final double? durationMin;
   final double? fare;
@@ -15,7 +19,11 @@ class RouteSegment {
     this.route,
     this.routeColor,
     this.boardAt,
+    this.boardLat,
+    this.boardLon,
     this.alightAt,
+    this.alightLat,
+    this.alightLon,
     this.distanceM,
     this.durationMin,
     this.fare,
@@ -27,7 +35,11 @@ class RouteSegment {
       route: json['route'] as String?,
       routeColor: json['route_color'] as String?,
       boardAt: json['board_at'] as String?,
+      boardLat: (json['board_lat'] as num?)?.toDouble(),
+      boardLon: (json['board_lon'] as num?)?.toDouble(),
       alightAt: json['alight_at'] as String?,
+      alightLat: (json['alight_lat'] as num?)?.toDouble(),
+      alightLon: (json['alight_lon'] as num?)?.toDouble(),
       distanceM: (json['distance_m'] as num?)?.toDouble(),
       durationMin: (json['duration_min'] as num?)?.toDouble(),
       fare: (json['fare'] as num?)?.toDouble(),
