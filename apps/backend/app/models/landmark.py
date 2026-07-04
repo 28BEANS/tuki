@@ -18,19 +18,19 @@ from app.db.base import Base, TimestampMixin
 class LandmarkCategory(str, enum.Enum):
     """Categories for landmark classification."""
 
-    SCHOOL = "school"
-    MALL = "mall"
-    HOSPITAL = "hospital"
-    GOVERNMENT = "government"
-    CHURCH = "church"
-    TERMINAL = "terminal"
-    MARKET = "market"
-    RESTAURANT = "restaurant"
-    HOTEL = "hotel"
-    PARK = "park"
-    BANK = "bank"
-    GAS_STATION = "gas_station"
-    OTHER = "other"
+    school = "school"
+    mall = "mall"
+    hospital = "hospital"
+    government = "government"
+    church = "church"
+    terminal = "terminal"
+    market = "market"
+    restaurant = "restaurant"
+    hotel = "hotel"
+    park = "park"
+    bank = "bank"
+    gas_station = "gas_station"
+    other = "other"
 
 
 class Landmark(Base, TimestampMixin):
