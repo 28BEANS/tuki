@@ -66,6 +66,10 @@ async def seed_landmarks(database_url: str) -> int:
     count = 0
 
     try:
+        # Delete existing landmarks with these names to guarantee idempotency
+        names = [l[0] for l in LANDMARKS]
+        await conn.execute("DELETE FROM landmarks WHERE name = ANY($1)", names)
+
         for name, category, lat, lon, aliases in LANDMARKS:
             await conn.execute(
                 """
@@ -75,13 +79,6 @@ async def seed_landmarks(database_url: str) -> int:
                     ST_SetSRID(ST_MakePoint($5, $4), 4326),
                     NOW(), NOW()
                 )
-                ON CONFLICT (name) DO UPDATE SET
-                    aliases = EXCLUDED.aliases,
-                    category = EXCLUDED.category,
-                    latitude = EXCLUDED.latitude,
-                    longitude = EXCLUDED.longitude,
-                    geometry = EXCLUDED.geometry,
-                    updated_at = NOW()
                 """,
                 name, aliases, category, lat, lon,
             )
