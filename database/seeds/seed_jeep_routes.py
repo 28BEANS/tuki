@@ -35,107 +35,71 @@ ROUTES = [
         "route_color": "Grey",
         "description": "Checkpoint through Fields, Balibago to Highway via Arayat Road.",
         "operating_direction": "bidirectional",
-        "stops": [
-            "Checkpoint", "Fields Avenue", "Johnnies", "Marlim",
-            "SR Lim", "Robinsons", "Crossing", "Richtofen",
-            "Pampang", "San Nicolas", "Rizal", "Jenra Mall", "Plaridel",
-        ],
+        "stops": ["Checkpoint", "Fields Avenue", "Johnnies", "Marlim", "SR Lim", "Robinsons", "Crossing", "Pampang Market", "Richtofen Crossing", "Jenra Mall", "San Nicolas", "Rizal", "Plaridel"],
     },
     {
         "route_name": "SM City – Main Gate – Dau",
         "route_color": "Various",
         "description": "Runs from the Main Gate along First Street, MacArthur Highway to Jumbo Jenra, Dau, Mabalacat Bus Terminal.",
         "operating_direction": "bidirectional",
-        "stops": [
-            "Main Gate", "First Street", "MacArthur Highway",
-            "Jumbo Jenra", "Dau", "Mabalacat Bus Terminal",
-        ],
+        "stops": ["Main Gate", "First Street", "MacArthur Highway", "Jumbo Jenra", "Dau", "Mabalacat Bus Terminal"],
     },
     {
         "route_name": "Checkpoint – Hensonville – Holy",
         "route_color": "White",
         "description": "Runs from Narciso Street, through Hensonville, to Holy Angel University and vice versa.",
         "operating_direction": "bidirectional",
-        "stops": [
-            "Narciso Street", "21st Street", "Hensonville",
-            "Arayat Boulevard", "Holy Angel University",
-        ],
+        "stops": ["Narciso Street", "21st Street", "Hensonville", "Arayat Boulevard", "Holy Angel University"],
     },
     {
         "route_name": "Sapang Bato – Angeles",
         "route_color": "Maroon",
         "description": "Sapang Bato through Friendship to Pampang Market area.",
         "operating_direction": "bidirectional",
-        "stops": [
-            "Sapang Bato", "Margot", "Friendship", "Anunas",
-            "Timog Park", "Carmenville", "City College",
-            "Kalayaan", "Pampang Market",
-        ],
+        "stops": ["Sapang Bato", "Margot", "Friendship Highway", "Timog Park", "Anunas", "City College", "Kalayaan", "Carmenville", "Pampang Market"],
     },
     {
         "route_name": "Checkpoint – Holy – Highway",
         "route_color": "Lavender",
         "description": "SM City through Fields, Robinsons, AUF, Holy, to Richtofen Crossing.",
         "operating_direction": "bidirectional",
-        "stops": [
-            "SM City Clark", "1st Street", "Fields Avenue", "Johnnies",
-            "Marlim", "SR Lim", "Robinsons", "Marisol", "AUF",
-            "Kuliat", "Lakandula", "HAU", "Holy", "Rizal",
-            "Pampang", "Richtofen Crossing",
-        ],
+        "stops": ["Main Gate", "First Street", "Fields Avenue", "Johnnies", "Marlim", "SR Lim", "Robinsons", "Marisol", "Pampang Market", "Richtofen Crossing", "AUF", "Kuliat", "Lakandula", "Rizal", "Holy Angel University"],
     },
     {
         "route_name": "Marisol – Pampang",
         "route_color": "Green",
         "description": "Marisol through AUF, Holy to Richtofen Crossing.",
         "operating_direction": "bidirectional",
-        "stops": [
-            "Marisol", "Magalang", "AUF", "Kuliat", "Lakandula",
-            "HAU", "Holy", "Jenra Mall", "Plaridel",
-            "San Nicolas", "Pampang", "Richtofen Crossing",
-        ],
+        "stops": ["Marisol", "Pampang Market", "Richtofen Crossing", "Jenra Mall", "AUF", "San Nicolas", "Kuliat", "Lakandula", "Holy Angel University", "Plaridel", "Magalang"],
     },
     {
         "route_name": "Pandang – Pampang",
         "route_color": "Blue",
         "description": "City Hall area through MacArthur to Plaridel.",
         "operating_direction": "bidirectional",
-        "stops": [
-            "City Hall", "Mining", "MacArthur Highway",
-            "Kuliat", "Pamintuan Residence", "Plaridel",
-        ],
+        "stops": ["City Hall", "Mining", "Kuliat", "Pamintuan Residence", "Plaridel", "MacArthur Highway"],
     },
     {
         "route_name": "Sunset – Nepo",
         "route_color": "Orange",
         "description": "Sunset area through Carmenville to Nepo Mart.",
         "operating_direction": "bidirectional",
-        "stops": [
-            "Sunset", "1976 Initial", "Champaca", "Nepo Mart",
-        ],
+        "stops": ["Sunset", "1976 Initial", "Champaca", "Nepo Mart"],
     },
     {
         "route_name": "Villa – Pampang – SM Telebestagen",
         "route_color": "Yellow",
         "description": "Villa Angela through Holy, Jenra Mall to Lakandula.",
         "operating_direction": "bidirectional",
-        "stops": [
-            "L&S", "Villa Angela", "Villa Gloria", "Villa Angelina",
-            "Bale Herencia", "HAU", "Holy", "Jenra Mall",
-            "Rizal", "San Nicolas", "Plaridel",
-            "Pamintuan Residence", "Lakandula",
-        ],
+        "stops": ["L&S", "Villa Angela", "Villa Gloria", "Villa Angelina", "Holy Angel University", "Pamintuan Residence", "Plaridel", "Rizal", "Lakandula", "San Nicolas", "Jenra Mall"],
     },
     {
         "route_name": "Capaya – Angeles",
         "route_color": "Pink",
         "description": "Capaya through Mining, MacArthur to Plaridel.",
         "operating_direction": "bidirectional",
-        "stops": [
-            "Citicenter", "Mining", "MacArthur Highway",
-            "Kuliat", "Plaridel",
-        ],
-    },
+        "stops": ["Citicenter", "Kuliat", "Plaridel", "Mining", "MacArthur Highway"],
+    }
 ]
 
 
@@ -145,6 +109,10 @@ async def seed_jeep_routes(database_url: str) -> int:
     route_count = 0
 
     try:
+        # Clear existing data first to avoid orphaned stops/routes
+        logger.info("Clearing existing jeep routes, stops, and associations...")
+        await conn.execute("TRUNCATE TABLE jeep_route_stops, jeep_routes, jeep_stops CASCADE")
+
         for route_data in ROUTES:
             # Create a placeholder geometry (straight line will be replaced with real data)
             # For now, use a minimal valid geometry
