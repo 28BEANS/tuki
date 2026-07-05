@@ -13,6 +13,7 @@ class RouteSegment {
   final double? distanceM;
   final double? durationMin;
   final double? fare;
+  final List<List<double>>? waypoints;
 
   const RouteSegment({
     required this.mode,
@@ -27,6 +28,7 @@ class RouteSegment {
     this.distanceM,
     this.durationMin,
     this.fare,
+    this.waypoints,
   });
 
   factory RouteSegment.fromJson(Map<String, dynamic> json) {
@@ -43,6 +45,10 @@ class RouteSegment {
       distanceM: (json['distance_m'] as num?)?.toDouble(),
       durationMin: (json['duration_min'] as num?)?.toDouble(),
       fare: (json['fare'] as num?)?.toDouble(),
+      waypoints: (json['waypoints'] as List<dynamic>?)
+          ?.map((wp) =>
+              (wp as List<dynamic>).map((v) => (v as num).toDouble()).toList())
+          .toList(),
     );
   }
 }

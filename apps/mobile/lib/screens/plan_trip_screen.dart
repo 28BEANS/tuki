@@ -32,6 +32,7 @@ class PlanTripScreen extends StatefulWidget {
 class _PlanTripScreenState extends State<PlanTripScreen> {
   final _landmarkService = LandmarkService();
   final _routeService = RouteService();
+  final _mapController = MapController();
 
   _TripPhase _phase = _TripPhase.input;
 
@@ -56,6 +57,7 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     _originController.dispose();
     _destController.dispose();
     _debounce?.cancel();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -134,6 +136,26 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
           _routeResult = result;
           _phase = _TripPhase.preview;
         });
+      }
+    } on RoutingUnavailableException {
+      if (mounted) {
+        setState(() => _routeError = 'Routing is temporarily unavailable.');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Routing is temporarily unavailable. Please try again later.'),
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    } on NoRouteFoundException {
+      if (mounted) {
+        setState(() => _routeError = 'No route found.');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No route found between the selected locations.'),
+            duration: Duration(seconds: 4),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -221,71 +243,86 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     }
 
     final polylines = <Polyline>[];
+    final allRoutePoints = <LatLng>[];
 
     if (routeResult != null) {
       for (final segment in routeResult.segments) {
-        if (segment.boardLat != null &&
+        // Use waypoints if available, otherwise fall back to board/alight
+        List<LatLng> points;
+        if (segment.waypoints != null && segment.waypoints!.length >= 2) {
+          points = segment.waypoints!
+              .map((wp) => LatLng(wp[0], wp[1]))
+              .toList();
+        } else if (segment.boardLat != null &&
             segment.boardLon != null &&
             segment.alightLat != null &&
             segment.alightLon != null) {
-          final points = [
+          points = [
             LatLng(segment.boardLat!, segment.boardLon!),
             LatLng(segment.alightLat!, segment.alightLon!),
           ];
+        } else {
+          continue;
+        }
 
-          final color = segment.mode == 'walk'
-              ? Colors.grey
-              : segment.mode == 'tricycle'
-                  ? Colors.green
-                  : _parseRouteColor(segment.routeColor);
+        allRoutePoints.addAll(points);
 
-          polylines.add(
-            Polyline(
-              points: points,
-              strokeWidth: 4.5,
-              color: color,
-              pattern: segment.mode == 'walk'
-                  ? const StrokePattern.dotted()
-                  : const StrokePattern.solid(),
+        final color = segment.mode == 'walk'
+            ? Colors.grey
+            : segment.mode == 'tricycle'
+                ? Colors.green
+                : _parseRouteColor(segment.routeColor);
+
+        polylines.add(
+          Polyline(
+            points: points,
+            strokeWidth: 4.5,
+            color: color,
+            pattern: segment.mode == 'walk'
+                ? const StrokePattern.dotted()
+                : const StrokePattern.solid(),
+          ),
+        );
+
+        // Add small markers for boarding/alighting stops on jeep segments
+        if (segment.mode == 'jeep') {
+          markers.add(
+            Marker(
+              point: points.first,
+              width: 14,
+              height: 14,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: color, width: 3),
+                ),
+              ),
             ),
           );
-
-          // Add small markers for intermediate boarding/alighting stops
-          if (segment.mode == 'jeep') {
-            markers.add(
-              Marker(
-                point: points.first,
-                width: 14,
-                height: 14,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: color, width: 3),
-                  ),
+          markers.add(
+            Marker(
+              point: points.last,
+              width: 14,
+              height: 14,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: color, width: 3),
                 ),
               ),
-            );
-            markers.add(
-              Marker(
-                point: points.last,
-                width: 14,
-                height: 14,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: color, width: 3),
-                  ),
-                ),
-              ),
-            );
-          }
+            ),
+          );
         }
       }
     }
 
+    // Auto-fit map to show the full route when we have route points
+    final shouldFitBounds = allRoutePoints.length >= 2;
+
     return FlutterMap(
+      mapController: _mapController,
       options: MapOptions(
         initialCenter: startLatLng,
         initialZoom: 13.5,
@@ -294,6 +331,17 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
         cameraConstraint: CameraConstraint.containCenter(
           bounds: _kAngelesBounds,
         ),
+        onMapReady: () {
+          if (shouldFitBounds) {
+            final bounds = LatLngBounds.fromPoints(allRoutePoints);
+            _mapController.fitCamera(
+              CameraFit.bounds(
+                bounds: bounds,
+                padding: const EdgeInsets.all(48),
+              ),
+            );
+          }
+        },
       ),
       children: [
         TileLayer(
