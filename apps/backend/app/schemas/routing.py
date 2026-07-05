@@ -36,6 +36,14 @@ class RouteSegment(BaseModel):
     distance_m: float | None = Field(None, description="Segment distance in meters")
     duration_min: float | None = Field(None, description="Estimated duration in minutes")
     fare: float | None = Field(None, description="Segment fare in PHP")
+    waypoints: list[list[float]] | None = Field(
+        None,
+        description=(
+            "Ordered list of [lat, lon] coordinates along this segment's path. "
+            "Used by the frontend to draw accurate map polylines. "
+            "Includes board and alight points as first and last entries."
+        ),
+    )
 
 
 class NavigationInstruction(BaseModel):

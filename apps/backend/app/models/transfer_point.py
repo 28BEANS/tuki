@@ -58,7 +58,11 @@ class TransferPoint(Base, TimestampMixin):
         index=True,
     )
     transfer_type: Mapped[TransferType] = mapped_column(
-        Enum(TransferType, name="transfer_type"),
+        Enum(
+            TransferType,
+            name="transfer_type",
+            values_callable=lambda e: [m.value for m in e],
+        ),
         nullable=False,
         index=True,
     )
