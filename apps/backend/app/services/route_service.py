@@ -3,12 +3,19 @@ Tuki Backend — Route Service
 
 Orchestrates the routing engine and formats navigation output.
 Uses the cached transport graph from GraphService for all routing requests.
-Falls back to mock data when the graph is not yet available.
+
+At query time, injects temporary walking nodes for the user's origin and
+destination, connecting them to nearby jeep stops. These virtual nodes are
+cleaned up after each request so the base graph remains unchanged.
 """
 
 from __future__ import annotations
 
 import logging
+import math
+from typing import TYPE_CHECKING
+
+import httpx
 
 from app.schemas.routing import (
     NavigationInstruction,
@@ -17,90 +24,41 @@ from app.schemas.routing import (
     RouteSegment,
 )
 
+if TYPE_CHECKING:
+    from app.services.graph_service import GraphService
+
 logger = logging.getLogger("tuki.services.route")
 
-# ── Mock fallback (used when graph is not available) ──────────────────────────
+# ── Constants ─────────────────────────────────────────────────────────────────
 
-_MOCK_SEGMENTS = [
-    RouteSegment(
-        mode="walk",
-        board_at="Your Starting Location",
-        board_lat=15.1320,
-        board_lon=120.5950,
-        alight_at="Holy Angel University",
-        alight_lat=15.1285,
-        alight_lon=120.5970,
-        distance_m=250,
-        duration_min=3,
-        fare=0,
-    ),
-    RouteSegment(
-        mode="jeep",
-        route="Checkpoint – Holy – Highway",
-        route_color="Lavender",
-        board_at="Holy Angel University",
-        board_lat=15.1285,
-        board_lon=120.5970,
-        alight_at="Jenra Mall",
-        alight_lat=15.1370,
-        alight_lon=120.5915,
-        distance_m=3200,
-        duration_min=12,
-        fare=13,
-    ),
-    RouteSegment(
-        mode="walk",
-        board_at="Jenra Mall",
-        board_lat=15.1370,
-        board_lon=120.5915,
-        alight_at="Tricycle Terminal",
-        alight_lat=15.1380,
-        alight_lon=120.5900,
-        distance_m=180,
-        duration_min=2,
-        fare=0,
-    ),
-    RouteSegment(
-        mode="tricycle",
-        board_at="Tricycle Terminal",
-        board_lat=15.1380,
-        board_lon=120.5900,
-        alight_at="Robinsons Starmills",
-        alight_lat=15.1435,
-        alight_lon=120.5900,
-        distance_m=800,
-        duration_min=5,
-        fare=25,
-    ),
-]
+# Maximum walking distance (metres) to connect virtual nodes to jeep stops.
+# Stops beyond this radius are not reachable on foot and won't be connected.
+WALK_RADIUS_M = 500.0
 
-_MOCK_INSTRUCTIONS = [
-    NavigationInstruction(
-        step=1,
-        instruction="Walk 250 meters to Holy Angel University jeepney stop.",
-        mode="walk",
-    ),
-    NavigationInstruction(
-        step=2,
-        instruction="Board the Lavender Jeep (Checkpoint–Holy–Highway) at Holy Angel University.",
-        mode="jeep",
-    ),
-    NavigationInstruction(
-        step=3,
-        instruction="Stay on the jeep until Jenra Mall.",
-        mode="jeep",
-    ),
-    NavigationInstruction(
-        step=4,
-        instruction="Walk approximately 180 meters toward the tricycle terminal.",
-        mode="walk",
-    ),
-    NavigationInstruction(
-        step=5,
-        instruction="Ride the tricycle to your destination.",
-        mode="tricycle",
-    ),
-]
+# Walking speed used to estimate walk segment travel time.
+WALK_SPEED_KMH = 4.5
+
+# IDs for virtual nodes injected per request — cleaned up before returning.
+_VIRTUAL_ORIGIN = "virtual_origin"
+_VIRTUAL_DEST = "virtual_destination"
+
+
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Straight-line distance in metres between two WGS-84 coords."""
+    r = 6_371_000.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dphi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    )
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _walk_time_min(distance_m: float) -> float:
+    """Estimated walking time in minutes."""
+    return round((distance_m / 1000) / WALK_SPEED_KMH * 60, 1)
 
 
 class RouteService:
@@ -108,22 +66,25 @@ class RouteService:
     Service for multimodal route calculation.
 
     Accepts a GraphService instance (injected from the API layer) and uses
-    its cached NetworkX graph. Gracefully falls back to mock data when the
-    graph is unavailable (e.g., DB unreachable at startup).
+    its cached NetworkX graph. Injects virtual walking nodes at query time
+    to connect arbitrary user coordinates to the jeep stop network.
     """
 
-    def __init__(self, graph_svc: "GraphService | None" = None) -> None:  # noqa: F821
+    def __init__(self, graph_svc: GraphService) -> None:
         self._graph_svc = graph_svc
 
-    async def calculate_route(self, request: RouteRequest) -> RouteResponse:
+    async def calculate_route(self, request: RouteRequest) -> RouteResponse | None:
         """
         Calculate a multimodal route from origin to destination.
 
+        Returns a RouteResponse on success, or None if no path exists.
+        Raises RuntimeError if the graph is unavailable.
+
         Strategy:
-        1. If graph is available → find nearest nodes, run pathfinding.
-        2. Convert RouteResult (engine model) → RouteResponse (API schema).
-        3. Generate landmark-based NavigationInstructions.
-        4. Fallback to mock if no path found or graph is unavailable.
+        1. Inject virtual origin/destination nodes with walking edges.
+        2. Run pathfinding on the augmented graph.
+        3. Convert engine RouteResult → API RouteResponse with waypoints.
+        4. Clean up virtual nodes so the base graph stays unchanged.
         """
         logger.info(
             "Route requested: (%.4f, %.4f) → (%.4f, %.4f) [prefer=%s]",
@@ -134,63 +95,180 @@ class RouteService:
             request.prefer,
         )
 
-        if self._graph_svc and self._graph_svc.is_ready:
-            result = await self._calculate_from_graph(request)
-            if result is not None:
-                return result
-            logger.warning("Graph pathfinding returned no path — falling back to mock")
+        if not self._graph_svc.is_ready:
+            raise RuntimeError("Routing graph unavailable")
 
-        logger.info("Using mock route response")
-        return RouteResponse(
-            total_fare=38,
-            total_distance_m=4430,
-            travel_time_min=22,
-            segments=_MOCK_SEGMENTS,
-            instructions=_MOCK_INSTRUCTIONS,
-            transfers=2,
+        graph = self._graph_svc.graph
+        assert graph is not None  # guaranteed by is_ready
+
+        try:
+            # 1. Inject virtual walking nodes
+            self._inject_virtual_node(
+                graph,
+                _VIRTUAL_ORIGIN,
+                request.origin_lat,
+                request.origin_lon,
+                "Your Location",
+            )
+            self._inject_virtual_node(
+                graph,
+                _VIRTUAL_DEST,
+                request.destination_lat,
+                request.destination_lon,
+                "Destination",
+            )
+
+            # 2. Check if origin and destination are the same virtual node
+            #    (both snap to the same area)
+            if _VIRTUAL_ORIGIN == _VIRTUAL_DEST:
+                return RouteResponse(
+                    total_fare=0,
+                    total_distance_m=0,
+                    travel_time_min=0,
+                    segments=[],
+                    instructions=[
+                        NavigationInstruction(
+                            step=1,
+                            instruction="You are already at your destination.",
+                            mode="walk",
+                        )
+                    ],
+                    transfers=0,
+                )
+
+            # 3. Run pathfinding
+            result = await self._run_pathfinding(graph, request)
+            if result is None:
+                return None
+
+            return result
+
+        finally:
+            # 4. Always clean up virtual nodes
+            self._remove_virtual_nodes(graph)
+
+    # ── Virtual node injection ────────────────────────────────────────────────
+
+    def _inject_virtual_node(
+        self,
+        graph,
+        node_id: str,
+        lat: float,
+        lon: float,
+        name: str,
+    ) -> None:
+        """
+        Add a virtual node at (lat, lon) and connect it via walking edges
+        to all jeep stops within WALK_RADIUS_M.
+
+        The walking edges are bidirectional so pathfinding can reach
+        jeep stops from the origin and reach the destination from jeep stops.
+        """
+        # Add the virtual node
+        graph.add_node(
+            node_id,
+            name=name,
+            latitude=lat,
+            longitude=lon,
+            node_type="walk",
+            virtual=True,
         )
 
-    async def _calculate_from_graph(
-        self, request: RouteRequest
+        # Find nearby jeep stops and connect with walking edges
+        nearby = self._graph_svc.find_nearby_nodes(lat, lon, radius_m=WALK_RADIUS_M)
+
+        if not nearby:
+            # If no stops within default radius, connect to the single nearest stop
+            nearest_id = self._graph_svc.find_nearest_node(lat, lon)
+            if nearest_id:
+                n_data = graph.nodes.get(nearest_id, {})
+                dist = _haversine_m(
+                    lat, lon,
+                    n_data.get("latitude", 0.0),
+                    n_data.get("longitude", 0.0),
+                )
+                nearby = [{"id": nearest_id, "distance_m": round(dist, 1)}]
+                logger.warning(
+                    "No stops within %.0fm of %s — connecting to nearest (%.0fm away)",
+                    WALK_RADIUS_M, name, dist,
+                )
+
+        for stop in nearby:
+            walk_dist = stop["distance_m"]
+            walk_time = _walk_time_min(walk_dist)
+
+            # Bidirectional walking edges
+            for src, tgt in [(node_id, stop["id"]), (stop["id"], node_id)]:
+                graph.add_edge(
+                    src, tgt,
+                    mode="walk",
+                    distance_m=walk_dist,
+                    fare=0.0,
+                    travel_time_min=walk_time,
+                    weight_time=walk_time,
+                    weight_fare=0.0,
+                    virtual=True,
+                )
+
+        logger.info(
+            "Injected virtual node '%s' at (%.4f, %.4f) — %d walking edges",
+            name, lat, lon, len(nearby) * 2,
+        )
+
+    def _remove_virtual_nodes(self, graph) -> None:
+        """Remove all virtual nodes and their edges from the graph."""
+        for vid in [_VIRTUAL_ORIGIN, _VIRTUAL_DEST]:
+            if vid in graph:
+                graph.remove_node(vid)
+
+    # ── Pathfinding ───────────────────────────────────────────────────────────
+
+    async def _get_road_following_waypoints(
+        self, coords: list[list[float]], mode: str
+    ) -> list[list[float]]:
+        """
+        Fetch road-following geometry between a list of coordinates from OSRM.
+        Falls back to raw coordinates if OSRM is unreachable or fails.
+        """
+        if len(coords) < 2:
+            return coords
+
+        # OSRM expects lon,lat separated by semicolons
+        coord_strs = [f"{lon},{lat}" for lat, lon in coords]
+        coords_param = ";".join(coord_strs)
+
+        # Profile is 'foot' for walk/transfer, 'driving' for jeepney/tricycle
+        profile = "foot" if mode in ("walk", "transfer") else "driving"
+        url = f"http://router.project-osrm.org/route/v1/{profile}/{coords_param}?overview=full&geometries=geojson"
+
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                response = await client.get(url)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("code") == "Ok" and data.get("routes"):
+                        geom = data["routes"][0]["geometry"]
+                        return [[lat, lon] for lon, lat in geom["coordinates"]]
+        except Exception as e:
+            logger.warning("OSRM routing failed (falling back to straight lines): %s", e)
+
+        return coords
+
+    async def _run_pathfinding(
+        self, graph, request: RouteRequest
     ) -> RouteResponse | None:
-        """Run pathfinding on the cached graph and build the response."""
+        """Run pathfinding on the augmented graph and build the response."""
         from routing_engine.graph_models import TransportMode
         from routing_engine.pathfinding import find_route
         from routing_engine.route_generator import RouteGenerator
         from routing_engine.fare_engine import FareEngine
         from routing_engine.eta_engine import ETAEngine
 
-        graph = self._graph_svc.graph  # type: ignore[union-attr]
-
-        origin_id = self._graph_svc.find_nearest_node(  # type: ignore[union-attr]
-            request.origin_lat, request.origin_lon
+        route_result = find_route(
+            graph, _VIRTUAL_ORIGIN, _VIRTUAL_DEST, strategy=request.prefer
         )
-        dest_id = self._graph_svc.find_nearest_node(  # type: ignore[union-attr]
-            request.destination_lat, request.destination_lon
-        )
-
-        if not origin_id or not dest_id:
-            return None
-
-        if origin_id == dest_id:
-            # Already at destination
-            return RouteResponse(
-                total_fare=0,
-                total_distance_m=0,
-                travel_time_min=0,
-                segments=[],
-                instructions=[
-                    NavigationInstruction(
-                        step=1,
-                        instruction="You are already at your destination.",
-                        mode="walk",
-                    )
-                ],
-                transfers=0,
-            )
-
-        route_result = find_route(graph, origin_id, dest_id, strategy=request.prefer)
         if route_result is None:
+            logger.warning("No path found between origin and destination")
             return None
 
         # Enrich with fare and ETA
@@ -203,16 +281,34 @@ class RouteService:
         generator = RouteGenerator()
         raw_instructions = generator.generate_instructions(route_result)
 
-        # Map routing engine segments → API schema segments
+        # Map routing engine segments → API schema segments (with road-following waypoints)
         segments: list[RouteSegment] = []
         for seg in route_result.segments:
+            # Collect waypoint coordinates from all nodes in this segment
+            raw_waypoints: list[list[float]] = []
+            for node_id in seg.nodes:
+                node_data = graph.nodes.get(node_id, {})
+                lat = node_data.get("latitude")
+                lon = node_data.get("longitude")
+                if lat is not None and lon is not None:
+                    raw_waypoints.append([lat, lon])
+
+            # Get road-following path via OSRM
+            waypoints = await self._get_road_following_waypoints(
+                raw_waypoints, seg.mode.value
+            )
+
             board_node = seg.nodes[0] if seg.nodes else None
             alight_node = seg.nodes[-1] if seg.nodes else None
 
             board_lat = graph.nodes[board_node].get("latitude") if board_node else None
             board_lon = graph.nodes[board_node].get("longitude") if board_node else None
-            alight_lat = graph.nodes[alight_node].get("latitude") if alight_node else None
-            alight_lon = graph.nodes[alight_node].get("longitude") if alight_node else None
+            alight_lat = (
+                graph.nodes[alight_node].get("latitude") if alight_node else None
+            )
+            alight_lon = (
+                graph.nodes[alight_node].get("longitude") if alight_node else None
+            )
 
             if seg.mode == TransportMode.TRANSFER:
                 # Represent transfers as short walk segments in the API
@@ -228,6 +324,7 @@ class RouteService:
                         alight_at=seg.alight_at,
                         alight_lat=alight_lat,
                         alight_lon=alight_lon,
+                        waypoints=waypoints if len(waypoints) >= 2 else None,
                     )
                 )
             else:
@@ -245,6 +342,7 @@ class RouteService:
                         distance_m=seg.distance_m,
                         duration_min=seg.duration_min,
                         fare=seg.fare,
+                        waypoints=waypoints if len(waypoints) >= 2 else None,
                     )
                 )
 
