@@ -16,6 +16,14 @@ ephemeral/
 .pub/
 /web/node_modules/
 
+# Top-level generated platform dirs (Flutter app is in apps/mobile/)
+/android/
+/ios/
+/macos/
+/linux/
+/windows/
+**/GeneratedPluginRegistrant.*
+
 # -------------------------------------------------------------------------
 # Android Specifics
 # -------------------------------------------------------------------------

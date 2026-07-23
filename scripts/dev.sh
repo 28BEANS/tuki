@@ -112,16 +112,33 @@ trap cleanup EXIT INT TERM
 start_backend() {
   log_section "Starting FastAPI Backend"
 
-  # 1. Create venv if missing
+  # 1. Select Python binary (prefer 3.11 if available)
+  PYTHON_BIN=""
+  if command -v python3.11 >/dev/null 2>&1; then
+    PYTHON_BIN="python3.11"
+  elif [ -f "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3.11" ]; then
+    PYTHON_BIN="/Library/Frameworks/Python.framework/Versions/3.11/bin/python3.11"
+  else
+    PYTHON_BIN="python3"
+  fi
+
+  # Create venv if missing
   if [ ! -f "$VENV_PYTHON" ]; then
-    log_info "Virtual environment not found — creating one..."
-    python3 -m venv "$VENV_DIR"
+    log_info "Virtual environment not found — creating one with $PYTHON_BIN..."
+    "$PYTHON_BIN" -m venv "$VENV_DIR"
     log_success "Virtual environment created at $VENV_DIR"
   else
     log_info "Virtual environment found at $VENV_DIR"
   fi
 
-  # 2. Install deps if fastapi is not present in the venv
+  # 2. Always ensure local routing_engine package is installed first (workspace-local dependency)
+  if ! "$VENV_PYTHON" -c "import routing_engine" 2>/dev/null; then
+    log_info "Installing local routing_engine package..."
+    "$VENV_PIP" install --quiet -e "$ROOT_DIR/packages/routing_engine/"
+    log_success "routing_engine installed."
+  fi
+
+  # 3. Install backend dependencies into venv
   if ! "$VENV_PYTHON" -c "import fastapi" 2>/dev/null; then
     log_info "Installing backend dependencies into venv (this may take a minute)..."
     "$VENV_PIP" install --quiet -e "$BACKEND_DIR/.[dev]"
@@ -130,21 +147,13 @@ start_backend() {
     log_info "Backend dependencies already installed."
   fi
 
-  # 3. Always ensure the local routing_engine package is installed (editable)
-  #    This is a workspace-local package not available on PyPI.
-  if ! "$VENV_PYTHON" -c "import routing_engine" 2>/dev/null; then
-    log_info "Installing local routing_engine package..."
-    "$VENV_PIP" install --quiet -e "$ROOT_DIR/packages/routing_engine/"
-    log_success "routing_engine installed."
-  fi
-
   log_info "Backend starting on http://localhost:${BACKEND_PORT}"
   log_info "API docs:     http://localhost:${BACKEND_PORT}/docs"
 
-  # 3. Run uvicorn from within the venv — always uses the venv's Python
+  # 4. Run uvicorn from within the venv — always uses the venv's Python with PYTHONPATH
   (
     cd "$BACKEND_DIR"
-    "$VENV_UVICORN" app.main:app \
+    PYTHONPATH=. "$VENV_UVICORN" app.main:app \
       --host 0.0.0.0 \
       --port "$BACKEND_PORT" \
       --reload \
