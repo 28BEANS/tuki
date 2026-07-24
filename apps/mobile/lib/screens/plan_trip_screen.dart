@@ -119,6 +119,7 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
     setState(() {
       _isCalculating = true;
       _routeError = null;
+      _routeResult = null;
     });
 
     final originLat = _selectedOrigin?.latitude ?? _kDefaultLat;
