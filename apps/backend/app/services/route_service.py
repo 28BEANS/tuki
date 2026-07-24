@@ -209,11 +209,11 @@ class RouteService:
                         name, dist,
                     )
 
-        # Log snapped node info for diagnostics
+        # Log snapped node info
         if nearby:
             closest = nearby[0]
-            logger.info(
-                "[DIAG] '%s' snapped to node '%s' (%.1fm away)",
+            logger.debug(
+                "'%s' snapped to node '%s' (%.1fm away)",
                 name, closest["id"], closest["distance_m"],
             )
 
@@ -291,28 +291,12 @@ class RouteService:
         origin_coord = [request.origin_lat, request.origin_lon]
         dest_coord = [request.destination_lat, request.destination_lon]
 
-        logger.info(
-            "[DIAG] Point A: (%.6f, %.6f), Point B: (%.6f, %.6f)",
-            origin_coord[0], origin_coord[1],
-            dest_coord[0], dest_coord[1],
-        )
-
         route_result = find_route(
             graph, _VIRTUAL_ORIGIN, _VIRTUAL_DEST, strategy=request.prefer
         )
         if route_result is None:
             logger.warning("No path found between origin and destination")
             return None
-
-        # Log path node IDs for diagnostics
-        for seg in route_result.segments:
-            logger.info(
-                "[DIAG] Segment %s: nodes=%s (first=%s, last=%s)",
-                seg.mode.value,
-                [seg.nodes[0], "...", seg.nodes[-1]] if len(seg.nodes) > 2 else seg.nodes,
-                seg.nodes[0] if seg.nodes else None,
-                seg.nodes[-1] if seg.nodes else None,
-            )
 
         # Enrich with fare and ETA
         fare_engine = FareEngine()
@@ -447,10 +431,6 @@ class RouteService:
             # Only prepend if the first waypoint is noticeably different
             if dist > 5.0:  # more than 5 metres
                 first_seg.waypoints.insert(0, origin_coord)
-                logger.info(
-                    "[DIAG] Prepended origin connector (%.1fm to first waypoint)",
-                    dist,
-                )
         elif first_seg.board_lat is not None and first_seg.board_lon is not None:
             dist = _haversine_m(
                 origin_coord[0], origin_coord[1],
@@ -471,10 +451,6 @@ class RouteService:
             )
             if dist > 5.0:
                 last_seg.waypoints.append(dest_coord)
-                logger.info(
-                    "[DIAG] Appended destination connector (%.1fm to last waypoint)",
-                    dist,
-                )
         elif last_seg.alight_lat is not None and last_seg.alight_lon is not None:
             dist = _haversine_m(
                 dest_coord[0], dest_coord[1],
@@ -524,10 +500,6 @@ class RouteService:
             origin_drift = _haversine_m(
                 origin_coord[0], origin_coord[1], first_pt[0], first_pt[1]
             )
-            logger.info(
-                "[DIAG] Origin drift: %.1fm (first route pt: %.6f,%.6f)",
-                origin_drift, first_pt[0], first_pt[1],
-            )
             if origin_drift > _MAX_ENDPOINT_DRIFT_M:
                 logger.error(
                     "Route start (%.6f,%.6f) is %.0fm from requested origin "
@@ -542,10 +514,6 @@ class RouteService:
         if last_pt:
             dest_drift = _haversine_m(
                 dest_coord[0], dest_coord[1], last_pt[0], last_pt[1]
-            )
-            logger.info(
-                "[DIAG] Destination drift: %.1fm (last route pt: %.6f,%.6f)",
-                dest_drift, last_pt[0], last_pt[1],
             )
             if dest_drift > _MAX_ENDPOINT_DRIFT_M:
                 logger.error(
@@ -567,7 +535,7 @@ class RouteService:
         origin_coord: list[float],
         dest_coord: list[float],
     ) -> None:
-        """Log a compact summary of the assembled route for diagnostics."""
+        """Log a compact summary of the assembled route."""
         if not segments:
             return
 
@@ -587,10 +555,11 @@ class RouteService:
 
         total_dist = sum(s.distance_m or 0 for s in segments)
 
-        logger.info(
-            "[DIAG] Route summary: %d segments, %.0fm total | "
+        logger.debug(
+            "Route summary: %d segments, %.0fm total | "
             "first=(%.6f,%.6f) last=(%.6f,%.6f)",
             len(segments), total_dist,
             first_pt[0], first_pt[1],
             last_pt[0], last_pt[1],
         )
+
