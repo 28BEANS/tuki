@@ -38,6 +38,14 @@ WALK_RADIUS_M = 500.0
 # Walking speed used to estimate walk segment travel time.
 WALK_SPEED_KMH = 4.5
 
+# Maximum acceptable distance (metres) from the requested coordinate to the
+# nearest graph node.  Beyond this the snapping is considered unreliable.
+_MAX_SNAP_DISTANCE_M = 1000.0
+
+# Maximum acceptable distance (metres) between a route endpoint and the
+# requested origin/destination.  Routes that exceed this are rejected.
+_MAX_ENDPOINT_DRIFT_M = 500.0
+
 # IDs for virtual nodes injected per request — cleaned up before returning.
 _VIRTUAL_ORIGIN = "virtual_origin"
 _VIRTUAL_DEST = "virtual_destination"
@@ -193,6 +201,22 @@ class RouteService:
                     WALK_RADIUS_M, name, dist,
                 )
 
+                # Warn if the nearest node is unreasonably far
+                if dist > _MAX_SNAP_DISTANCE_M:
+                    logger.warning(
+                        "Nearest graph node for '%s' is %.0fm away — "
+                        "route may be unreliable",
+                        name, dist,
+                    )
+
+        # Log snapped node info for diagnostics
+        if nearby:
+            closest = nearby[0]
+            logger.info(
+                "[DIAG] '%s' snapped to node '%s' (%.1fm away)",
+                name, closest["id"], closest["distance_m"],
+            )
+
         for stop in nearby:
             walk_dist = stop["distance_m"]
             walk_time = _walk_time_min(walk_dist)
@@ -264,12 +288,31 @@ class RouteService:
         from routing_engine.fare_engine import FareEngine
         from routing_engine.eta_engine import ETAEngine
 
+        origin_coord = [request.origin_lat, request.origin_lon]
+        dest_coord = [request.destination_lat, request.destination_lon]
+
+        logger.info(
+            "[DIAG] Point A: (%.6f, %.6f), Point B: (%.6f, %.6f)",
+            origin_coord[0], origin_coord[1],
+            dest_coord[0], dest_coord[1],
+        )
+
         route_result = find_route(
             graph, _VIRTUAL_ORIGIN, _VIRTUAL_DEST, strategy=request.prefer
         )
         if route_result is None:
             logger.warning("No path found between origin and destination")
             return None
+
+        # Log path node IDs for diagnostics
+        for seg in route_result.segments:
+            logger.info(
+                "[DIAG] Segment %s: nodes=%s (first=%s, last=%s)",
+                seg.mode.value,
+                [seg.nodes[0], "...", seg.nodes[-1]] if len(seg.nodes) > 2 else seg.nodes,
+                seg.nodes[0] if seg.nodes else None,
+                seg.nodes[-1] if seg.nodes else None,
+            )
 
         # Enrich with fare and ETA
         fare_engine = FareEngine()
@@ -346,6 +389,19 @@ class RouteService:
                     )
                 )
 
+        # ── Connector segments: ensure route starts at Point A / ends at Point B ──
+        self._ensure_endpoint_connectors(segments, origin_coord, dest_coord)
+
+        # ── Validate route endpoints ──────────────────────────────────────────
+        if not self._validate_route_endpoints(segments, origin_coord, dest_coord):
+            logger.error(
+                "Route endpoints too far from requested coordinates — rejecting"
+            )
+            return None
+
+        # ── Diagnostic: log final route geometry summary ──────────────────────
+        self._log_route_summary(segments, origin_coord, dest_coord)
+
         instructions: list[NavigationInstruction] = [
             NavigationInstruction(
                 step=instr["step"],
@@ -362,4 +418,179 @@ class RouteService:
             segments=segments,
             instructions=instructions,
             transfers=route_result.transfers,
+        )
+
+    # ── Endpoint connectors ───────────────────────────────────────────────────
+
+    @staticmethod
+    def _ensure_endpoint_connectors(
+        segments: list[RouteSegment],
+        origin_coord: list[float],
+        dest_coord: list[float],
+    ) -> None:
+        """
+        Prepend the exact origin coordinate to the first segment's waypoints
+        and append the exact destination coordinate to the last segment's
+        waypoints so the rendered polyline begins at Point A and ends at
+        Point B.
+        """
+        if not segments:
+            return
+
+        # ── Prepend origin ────────────────────────────────────────────────────
+        first_seg = segments[0]
+        if first_seg.waypoints and len(first_seg.waypoints) >= 1:
+            first_wp = first_seg.waypoints[0]
+            dist = _haversine_m(
+                origin_coord[0], origin_coord[1], first_wp[0], first_wp[1]
+            )
+            # Only prepend if the first waypoint is noticeably different
+            if dist > 5.0:  # more than 5 metres
+                first_seg.waypoints.insert(0, origin_coord)
+                logger.info(
+                    "[DIAG] Prepended origin connector (%.1fm to first waypoint)",
+                    dist,
+                )
+        elif first_seg.board_lat is not None and first_seg.board_lon is not None:
+            dist = _haversine_m(
+                origin_coord[0], origin_coord[1],
+                first_seg.board_lat, first_seg.board_lon,
+            )
+            if dist > 5.0:
+                first_seg.waypoints = [
+                    origin_coord,
+                    [first_seg.board_lat, first_seg.board_lon],
+                ]
+
+        # ── Append destination ────────────────────────────────────────────────
+        last_seg = segments[-1]
+        if last_seg.waypoints and len(last_seg.waypoints) >= 1:
+            last_wp = last_seg.waypoints[-1]
+            dist = _haversine_m(
+                dest_coord[0], dest_coord[1], last_wp[0], last_wp[1]
+            )
+            if dist > 5.0:
+                last_seg.waypoints.append(dest_coord)
+                logger.info(
+                    "[DIAG] Appended destination connector (%.1fm to last waypoint)",
+                    dist,
+                )
+        elif last_seg.alight_lat is not None and last_seg.alight_lon is not None:
+            dist = _haversine_m(
+                dest_coord[0], dest_coord[1],
+                last_seg.alight_lat, last_seg.alight_lon,
+            )
+            if dist > 5.0:
+                last_seg.waypoints = [
+                    [last_seg.alight_lat, last_seg.alight_lon],
+                    dest_coord,
+                ]
+
+    # ── Route endpoint validation ─────────────────────────────────────────────
+
+    @staticmethod
+    def _validate_route_endpoints(
+        segments: list[RouteSegment],
+        origin_coord: list[float],
+        dest_coord: list[float],
+    ) -> bool:
+        """
+        Validate that the assembled route geometry starts near the requested
+        origin and ends near the requested destination.
+
+        Returns True if valid, False if the route is too far off.
+        """
+        if not segments:
+            return False
+
+        # Find the first coordinate of the route
+        first_seg = segments[0]
+        first_pt = None
+        if first_seg.waypoints and len(first_seg.waypoints) >= 1:
+            first_pt = first_seg.waypoints[0]
+        elif first_seg.board_lat is not None and first_seg.board_lon is not None:
+            first_pt = [first_seg.board_lat, first_seg.board_lon]
+
+        # Find the last coordinate of the route
+        last_seg = segments[-1]
+        last_pt = None
+        if last_seg.waypoints and len(last_seg.waypoints) >= 1:
+            last_pt = last_seg.waypoints[-1]
+        elif last_seg.alight_lat is not None and last_seg.alight_lon is not None:
+            last_pt = [last_seg.alight_lat, last_seg.alight_lon]
+
+        # Check origin
+        if first_pt:
+            origin_drift = _haversine_m(
+                origin_coord[0], origin_coord[1], first_pt[0], first_pt[1]
+            )
+            logger.info(
+                "[DIAG] Origin drift: %.1fm (first route pt: %.6f,%.6f)",
+                origin_drift, first_pt[0], first_pt[1],
+            )
+            if origin_drift > _MAX_ENDPOINT_DRIFT_M:
+                logger.error(
+                    "Route start (%.6f,%.6f) is %.0fm from requested origin "
+                    "(%.6f,%.6f) — exceeds %.0fm threshold",
+                    first_pt[0], first_pt[1], origin_drift,
+                    origin_coord[0], origin_coord[1],
+                    _MAX_ENDPOINT_DRIFT_M,
+                )
+                return False
+
+        # Check destination
+        if last_pt:
+            dest_drift = _haversine_m(
+                dest_coord[0], dest_coord[1], last_pt[0], last_pt[1]
+            )
+            logger.info(
+                "[DIAG] Destination drift: %.1fm (last route pt: %.6f,%.6f)",
+                dest_drift, last_pt[0], last_pt[1],
+            )
+            if dest_drift > _MAX_ENDPOINT_DRIFT_M:
+                logger.error(
+                    "Route end (%.6f,%.6f) is %.0fm from requested destination "
+                    "(%.6f,%.6f) — exceeds %.0fm threshold",
+                    last_pt[0], last_pt[1], dest_drift,
+                    dest_coord[0], dest_coord[1],
+                    _MAX_ENDPOINT_DRIFT_M,
+                )
+                return False
+
+        return True
+
+    # ── Diagnostic logging ────────────────────────────────────────────────────
+
+    @staticmethod
+    def _log_route_summary(
+        segments: list[RouteSegment],
+        origin_coord: list[float],
+        dest_coord: list[float],
+    ) -> None:
+        """Log a compact summary of the assembled route for diagnostics."""
+        if not segments:
+            return
+
+        # First and last points
+        first_seg = segments[0]
+        last_seg = segments[-1]
+        first_pt = (
+            first_seg.waypoints[0]
+            if first_seg.waypoints
+            else [first_seg.board_lat, first_seg.board_lon]
+        )
+        last_pt = (
+            last_seg.waypoints[-1]
+            if last_seg.waypoints
+            else [last_seg.alight_lat, last_seg.alight_lon]
+        )
+
+        total_dist = sum(s.distance_m or 0 for s in segments)
+
+        logger.info(
+            "[DIAG] Route summary: %d segments, %.0fm total | "
+            "first=(%.6f,%.6f) last=(%.6f,%.6f)",
+            len(segments), total_dist,
+            first_pt[0], first_pt[1],
+            last_pt[0], last_pt[1],
         )
