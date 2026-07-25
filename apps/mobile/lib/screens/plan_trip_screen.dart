@@ -56,6 +56,8 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
   bool _isResolvingPlace = false;
   Timer? _debounce;
   String _activeSearchField = 'destination'; // 'origin' | 'destination'
+  int _locationRequestId = 0;
+  int _placeResolutionId = 0;
 
   // ── Route result state ──────────────────────────────────────────────────
   RouteResult? _routeResult;
@@ -81,8 +83,11 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
 
   // ── Current location ─────────────────────────────────────────────────────
   Future<void> _useCurrentLocation({bool showErrors = true}) async {
+    final requestId = ++_locationRequestId;
+    _placeResolutionId++;
     setState(() {
       _isLocating = true;
+      _isResolvingPlace = false;
       _selectedOrigin = null;
       _suggestions = [];
       _originController.text = 'Locating current position…';
@@ -118,7 +123,7 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
         );
       }
 
-      if (!mounted) return;
+      if (!mounted || requestId != _locationRequestId) return;
       setState(() {
         _currentLocation = location;
         _originController.text = 'Current Location';
@@ -132,7 +137,7 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
         }
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestId != _locationRequestId) return;
       setState(() {
         _currentLocation = null;
         _originController.clear();
@@ -150,7 +155,9 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isLocating = false);
+      if (mounted && requestId == _locationRequestId) {
+        setState(() => _isLocating = false);
+      }
     }
   }
 
@@ -165,7 +172,11 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
   void _onSearchChanged(String query, String field) {
     setState(() {
       _activeSearchField = field;
+      _placeResolutionId++;
       if (field == 'origin') {
+        _locationRequestId++;
+        _isLocating = false;
+        _currentLocation = null;
         if (_selectedOrigin?.name != query.trim()) {
           _selectedOrigin = null;
         }
@@ -219,6 +230,8 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
   }
 
   Future<void> _selectSuggestion(PlaceSuggestion suggestion) async {
+    final field = _activeSearchField;
+    final requestId = ++_placeResolutionId;
     setState(() {
       _isResolvingPlace = true;
       _suggestions = [];
@@ -226,9 +239,9 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
 
     try {
       final landmark = await _placeService.resolve(suggestion);
-      if (!mounted) return;
+      if (!mounted || requestId != _placeResolutionId) return;
       setState(() {
-        if (_activeSearchField == 'origin') {
+        if (field == 'origin') {
           _selectedOrigin = landmark;
           _originController.text = landmark.name;
         } else {
@@ -237,14 +250,16 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
         }
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || requestId != _placeResolutionId) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Could not locate that place. Please choose another.'),
         ),
       );
     } finally {
-      if (mounted) setState(() => _isResolvingPlace = false);
+      if (mounted && requestId == _placeResolutionId) {
+        setState(() => _isResolvingPlace = false);
+      }
     }
   }
 
