@@ -5,8 +5,8 @@ Orchestrates the routing engine and formats navigation output.
 Uses the cached transport graph from GraphService for all routing requests.
 
 At query time, injects temporary walking nodes for the user's origin and
-destination, connecting them to nearby jeep stops. These virtual nodes are
-cleaned up after each request so the base graph remains unchanged.
+destination into a per-request graph copy, connecting them to nearby jeep
+stops without mutating the shared cached graph.
 """
 
 from __future__ import annotations
@@ -15,14 +15,13 @@ import logging
 import math
 from typing import TYPE_CHECKING
 
-import httpx
-
 from app.schemas.routing import (
     NavigationInstruction,
     RouteRequest,
     RouteResponse,
     RouteSegment,
 )
+from app.services.road_geometry_service import RoadGeometryService
 
 if TYPE_CHECKING:
     from app.services.graph_service import GraphService
@@ -46,7 +45,10 @@ _MAX_SNAP_DISTANCE_M = 1000.0
 # requested origin/destination.  Routes that exceed this are rejected.
 _MAX_ENDPOINT_DRIFT_M = 500.0
 
-# IDs for virtual nodes injected per request — cleaned up before returning.
+# Short trips may be completed entirely on foot.
+_MAX_DIRECT_WALK_M = 1_500.0
+
+# Stable IDs are safe because every request works on its own graph copy.
 _VIRTUAL_ORIGIN = "virtual_origin"
 _VIRTUAL_DEST = "virtual_destination"
 
@@ -57,10 +59,7 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
     dlambda = math.radians(lon2 - lon1)
-    a = (
-        math.sin(dphi / 2) ** 2
-        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    )
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
     return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
@@ -78,8 +77,13 @@ class RouteService:
     to connect arbitrary user coordinates to the jeep stop network.
     """
 
-    def __init__(self, graph_svc: GraphService) -> None:
+    def __init__(
+        self,
+        graph_svc: GraphService,
+        geometry_svc: RoadGeometryService | None = None,
+    ) -> None:
         self._graph_svc = graph_svc
+        self._geometry_svc = geometry_svc or RoadGeometryService()
 
     async def calculate_route(self, request: RouteRequest) -> RouteResponse | None:
         """
@@ -89,10 +93,10 @@ class RouteService:
         Raises RuntimeError if the graph is unavailable.
 
         Strategy:
-        1. Inject virtual origin/destination nodes with walking edges.
-        2. Run pathfinding on the augmented graph.
-        3. Convert engine RouteResult → API RouteResponse with waypoints.
-        4. Clean up virtual nodes so the base graph stays unchanged.
+        1. Copy the cached graph for request isolation.
+        2. Inject virtual origin/destination nodes with walking edges.
+        3. Run pathfinding on the augmented graph.
+        4. Convert engine RouteResult → API RouteResponse with waypoints.
         """
         logger.info(
             "Route requested: (%.4f, %.4f) → (%.4f, %.4f) [prefer=%s]",
@@ -106,54 +110,64 @@ class RouteService:
         if not self._graph_svc.is_ready:
             raise RuntimeError("Routing graph unavailable")
 
-        graph = self._graph_svc.graph
-        assert graph is not None  # guaranteed by is_ready
+        direct_distance = _haversine_m(
+            request.origin_lat,
+            request.origin_lon,
+            request.destination_lat,
+            request.destination_lon,
+        )
+        if direct_distance <= 5.0:
+            return RouteResponse(
+                total_fare=0,
+                total_distance_m=round(direct_distance, 1),
+                travel_time_min=0,
+                segments=[],
+                instructions=[
+                    NavigationInstruction(
+                        step=1,
+                        instruction="You are already at your destination.",
+                        mode="walk",
+                    )
+                ],
+                transfers=0,
+            )
 
-        try:
-            # 1. Inject virtual walking nodes
-            self._inject_virtual_node(
-                graph,
+        base_graph = self._graph_svc.graph
+        assert base_graph is not None  # guaranteed by is_ready
+        graph = base_graph.copy(as_view=False)
+
+        origin_connected = self._inject_virtual_node(
+            graph,
+            _VIRTUAL_ORIGIN,
+            request.origin_lat,
+            request.origin_lon,
+            "Your Location",
+        )
+        destination_connected = self._inject_virtual_node(
+            graph,
+            _VIRTUAL_DEST,
+            request.destination_lat,
+            request.destination_lon,
+            "Destination",
+        )
+        if not origin_connected or not destination_connected:
+            return None
+
+        if direct_distance <= _MAX_DIRECT_WALK_M:
+            direct_walk_time = _walk_time_min(direct_distance)
+            graph.add_edge(
                 _VIRTUAL_ORIGIN,
-                request.origin_lat,
-                request.origin_lon,
-                "Your Location",
-            )
-            self._inject_virtual_node(
-                graph,
                 _VIRTUAL_DEST,
-                request.destination_lat,
-                request.destination_lon,
-                "Destination",
+                mode="walk",
+                distance_m=round(direct_distance, 1),
+                fare=0.0,
+                travel_time_min=direct_walk_time,
+                weight_time=direct_walk_time,
+                weight_fare=0.0,
+                virtual=True,
             )
 
-            # 2. Check if origin and destination are the same virtual node
-            #    (both snap to the same area)
-            if _VIRTUAL_ORIGIN == _VIRTUAL_DEST:
-                return RouteResponse(
-                    total_fare=0,
-                    total_distance_m=0,
-                    travel_time_min=0,
-                    segments=[],
-                    instructions=[
-                        NavigationInstruction(
-                            step=1,
-                            instruction="You are already at your destination.",
-                            mode="walk",
-                        )
-                    ],
-                    transfers=0,
-                )
-
-            # 3. Run pathfinding
-            result = await self._run_pathfinding(graph, request)
-            if result is None:
-                return None
-
-            return result
-
-        finally:
-            # 4. Always clean up virtual nodes
-            self._remove_virtual_nodes(graph)
+        return await self._run_pathfinding(graph, request)
 
     # ── Virtual node injection ────────────────────────────────────────────────
 
@@ -164,7 +178,7 @@ class RouteService:
         lat: float,
         lon: float,
         name: str,
-    ) -> None:
+    ) -> bool:
         """
         Add a virtual node at (lat, lon) and connect it via walking edges
         to all jeep stops within WALK_RADIUS_M.
@@ -191,30 +205,40 @@ class RouteService:
             if nearest_id:
                 n_data = graph.nodes.get(nearest_id, {})
                 dist = _haversine_m(
-                    lat, lon,
+                    lat,
+                    lon,
                     n_data.get("latitude", 0.0),
                     n_data.get("longitude", 0.0),
                 )
+                if dist > _MAX_SNAP_DISTANCE_M:
+                    logger.warning(
+                        "Rejecting '%s': nearest graph node is %.0fm away",
+                        name,
+                        dist,
+                    )
+                    graph.remove_node(node_id)
+                    return False
+
                 nearby = [{"id": nearest_id, "distance_m": round(dist, 1)}]
                 logger.warning(
                     "No stops within %.0fm of %s — connecting to nearest (%.0fm away)",
-                    WALK_RADIUS_M, name, dist,
+                    WALK_RADIUS_M,
+                    name,
+                    dist,
                 )
 
-                # Warn if the nearest node is unreasonably far
-                if dist > _MAX_SNAP_DISTANCE_M:
-                    logger.warning(
-                        "Nearest graph node for '%s' is %.0fm away — "
-                        "route may be unreliable",
-                        name, dist,
-                    )
+        if not nearby:
+            graph.remove_node(node_id)
+            return False
 
         # Log snapped node info
         if nearby:
             closest = nearby[0]
             logger.debug(
                 "'%s' snapped to node '%s' (%.1fm away)",
-                name, closest["id"], closest["distance_m"],
+                name,
+                closest["id"],
+                closest["distance_m"],
             )
 
         for stop in nearby:
@@ -224,7 +248,8 @@ class RouteService:
             # Bidirectional walking edges
             for src, tgt in [(node_id, stop["id"]), (stop["id"], node_id)]:
                 graph.add_edge(
-                    src, tgt,
+                    src,
+                    tgt,
                     mode="walk",
                     distance_m=walk_dist,
                     fare=0.0,
@@ -236,64 +261,27 @@ class RouteService:
 
         logger.info(
             "Injected virtual node '%s' at (%.4f, %.4f) — %d walking edges",
-            name, lat, lon, len(nearby) * 2,
+            name,
+            lat,
+            lon,
+            len(nearby) * 2,
         )
-
-    def _remove_virtual_nodes(self, graph) -> None:
-        """Remove all virtual nodes and their edges from the graph."""
-        for vid in [_VIRTUAL_ORIGIN, _VIRTUAL_DEST]:
-            if vid in graph:
-                graph.remove_node(vid)
+        return True
 
     # ── Pathfinding ───────────────────────────────────────────────────────────
 
-    async def _get_road_following_waypoints(
-        self, coords: list[list[float]], mode: str
-    ) -> list[list[float]]:
-        """
-        Fetch road-following geometry between a list of coordinates from OSRM.
-        Falls back to raw coordinates if OSRM is unreachable or fails.
-        """
-        if len(coords) < 2:
-            return coords
-
-        # OSRM expects lon,lat separated by semicolons
-        coord_strs = [f"{lon},{lat}" for lat, lon in coords]
-        coords_param = ";".join(coord_strs)
-
-        # Profile is 'foot' for walk/transfer, 'driving' for jeepney/tricycle
-        profile = "foot" if mode in ("walk", "transfer") else "driving"
-        url = f"http://router.project-osrm.org/route/v1/{profile}/{coords_param}?overview=full&geometries=geojson"
-
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(url)
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("code") == "Ok" and data.get("routes"):
-                        geom = data["routes"][0]["geometry"]
-                        return [[lat, lon] for lon, lat in geom["coordinates"]]
-        except Exception as e:
-            logger.warning("OSRM routing failed (falling back to straight lines): %s", e)
-
-        return coords
-
-    async def _run_pathfinding(
-        self, graph, request: RouteRequest
-    ) -> RouteResponse | None:
+    async def _run_pathfinding(self, graph, request: RouteRequest) -> RouteResponse | None:
         """Run pathfinding on the augmented graph and build the response."""
+        from routing_engine.eta_engine import ETAEngine
+        from routing_engine.fare_engine import FareEngine
         from routing_engine.graph_models import TransportMode
         from routing_engine.pathfinding import find_route
         from routing_engine.route_generator import RouteGenerator
-        from routing_engine.fare_engine import FareEngine
-        from routing_engine.eta_engine import ETAEngine
 
         origin_coord = [request.origin_lat, request.origin_lon]
         dest_coord = [request.destination_lat, request.destination_lon]
 
-        route_result = find_route(
-            graph, _VIRTUAL_ORIGIN, _VIRTUAL_DEST, strategy=request.prefer
-        )
+        route_result = find_route(graph, _VIRTUAL_ORIGIN, _VIRTUAL_DEST, strategy=request.prefer)
         if route_result is None:
             logger.warning("No path found between origin and destination")
             return None
@@ -320,28 +308,25 @@ class RouteService:
                 if lat is not None and lon is not None:
                     raw_waypoints.append([lat, lon])
 
-            # Get road-following path via OSRM
-            waypoints = await self._get_road_following_waypoints(
-                raw_waypoints, seg.mode.value
-            )
+            # Resolve road-following geometry while preserving exact graph
+            # endpoints and the authoritative stop order.
+            waypoints = await self._geometry_svc.get_geometry(raw_waypoints, seg.mode.value)
 
             board_node = seg.nodes[0] if seg.nodes else None
             alight_node = seg.nodes[-1] if seg.nodes else None
 
             board_lat = graph.nodes[board_node].get("latitude") if board_node else None
             board_lon = graph.nodes[board_node].get("longitude") if board_node else None
-            alight_lat = (
-                graph.nodes[alight_node].get("latitude") if alight_node else None
-            )
-            alight_lon = (
-                graph.nodes[alight_node].get("longitude") if alight_node else None
-            )
+            alight_lat = graph.nodes[alight_node].get("latitude") if alight_node else None
+            alight_lon = graph.nodes[alight_node].get("longitude") if alight_node else None
 
             if seg.mode == TransportMode.TRANSFER:
                 # Represent transfers as short walk segments in the API
                 segments.append(
                     RouteSegment(
                         mode="walk",
+                        route=None,
+                        route_color=None,
                         distance_m=seg.distance_m,
                         duration_min=seg.duration_min,
                         fare=0,
@@ -378,9 +363,7 @@ class RouteService:
 
         # ── Validate route endpoints ──────────────────────────────────────────
         if not self._validate_route_endpoints(segments, origin_coord, dest_coord):
-            logger.error(
-                "Route endpoints too far from requested coordinates — rejecting"
-            )
+            logger.error("Route endpoints too far from requested coordinates — rejecting")
             return None
 
         # ── Diagnostic: log final route geometry summary ──────────────────────
@@ -425,16 +408,16 @@ class RouteService:
         first_seg = segments[0]
         if first_seg.waypoints and len(first_seg.waypoints) >= 1:
             first_wp = first_seg.waypoints[0]
-            dist = _haversine_m(
-                origin_coord[0], origin_coord[1], first_wp[0], first_wp[1]
-            )
+            dist = _haversine_m(origin_coord[0], origin_coord[1], first_wp[0], first_wp[1])
             # Only prepend if the first waypoint is noticeably different
             if dist > 5.0:  # more than 5 metres
                 first_seg.waypoints.insert(0, origin_coord)
         elif first_seg.board_lat is not None and first_seg.board_lon is not None:
             dist = _haversine_m(
-                origin_coord[0], origin_coord[1],
-                first_seg.board_lat, first_seg.board_lon,
+                origin_coord[0],
+                origin_coord[1],
+                first_seg.board_lat,
+                first_seg.board_lon,
             )
             if dist > 5.0:
                 first_seg.waypoints = [
@@ -446,15 +429,15 @@ class RouteService:
         last_seg = segments[-1]
         if last_seg.waypoints and len(last_seg.waypoints) >= 1:
             last_wp = last_seg.waypoints[-1]
-            dist = _haversine_m(
-                dest_coord[0], dest_coord[1], last_wp[0], last_wp[1]
-            )
+            dist = _haversine_m(dest_coord[0], dest_coord[1], last_wp[0], last_wp[1])
             if dist > 5.0:
                 last_seg.waypoints.append(dest_coord)
         elif last_seg.alight_lat is not None and last_seg.alight_lon is not None:
             dist = _haversine_m(
-                dest_coord[0], dest_coord[1],
-                last_seg.alight_lat, last_seg.alight_lon,
+                dest_coord[0],
+                dest_coord[1],
+                last_seg.alight_lat,
+                last_seg.alight_lon,
             )
             if dist > 5.0:
                 last_seg.waypoints = [
@@ -497,30 +480,32 @@ class RouteService:
 
         # Check origin
         if first_pt:
-            origin_drift = _haversine_m(
-                origin_coord[0], origin_coord[1], first_pt[0], first_pt[1]
-            )
+            origin_drift = _haversine_m(origin_coord[0], origin_coord[1], first_pt[0], first_pt[1])
             if origin_drift > _MAX_ENDPOINT_DRIFT_M:
                 logger.error(
                     "Route start (%.6f,%.6f) is %.0fm from requested origin "
                     "(%.6f,%.6f) — exceeds %.0fm threshold",
-                    first_pt[0], first_pt[1], origin_drift,
-                    origin_coord[0], origin_coord[1],
+                    first_pt[0],
+                    first_pt[1],
+                    origin_drift,
+                    origin_coord[0],
+                    origin_coord[1],
                     _MAX_ENDPOINT_DRIFT_M,
                 )
                 return False
 
         # Check destination
         if last_pt:
-            dest_drift = _haversine_m(
-                dest_coord[0], dest_coord[1], last_pt[0], last_pt[1]
-            )
+            dest_drift = _haversine_m(dest_coord[0], dest_coord[1], last_pt[0], last_pt[1])
             if dest_drift > _MAX_ENDPOINT_DRIFT_M:
                 logger.error(
                     "Route end (%.6f,%.6f) is %.0fm from requested destination "
                     "(%.6f,%.6f) — exceeds %.0fm threshold",
-                    last_pt[0], last_pt[1], dest_drift,
-                    dest_coord[0], dest_coord[1],
+                    last_pt[0],
+                    last_pt[1],
+                    dest_drift,
+                    dest_coord[0],
+                    dest_coord[1],
                     _MAX_ENDPOINT_DRIFT_M,
                 )
                 return False
@@ -556,10 +541,11 @@ class RouteService:
         total_dist = sum(s.distance_m or 0 for s in segments)
 
         logger.debug(
-            "Route summary: %d segments, %.0fm total | "
-            "first=(%.6f,%.6f) last=(%.6f,%.6f)",
-            len(segments), total_dist,
-            first_pt[0], first_pt[1],
-            last_pt[0], last_pt[1],
+            "Route summary: %d segments, %.0fm total | " "first=(%.6f,%.6f) last=(%.6f,%.6f)",
+            len(segments),
+            total_dist,
+            first_pt[0],
+            first_pt[1],
+            last_pt[0],
+            last_pt[1],
         )
-
