@@ -2,20 +2,19 @@
 Tuki Routing Engine — Unit Tests
 """
 
-import pytest
-import networkx as nx
 
+from routing_engine.eta_engine import ETAEngine
+from routing_engine.fare_engine import FareEngine
+from routing_engine.graph_builder import TransportGraphBuilder
 from routing_engine.graph_models import (
+    RouteResult,
+    RouteSegment,
     TransportEdge,
     TransportMode,
     TransportNode,
-    RouteResult,
-    RouteSegment,
 )
-from routing_engine.graph_builder import TransportGraphBuilder
 from routing_engine.pathfinding import find_route
-from routing_engine.fare_engine import FareEngine
-from routing_engine.eta_engine import ETAEngine
+from routing_engine.route_generator import RouteGenerator
 
 
 class TestGraphModels:
@@ -160,6 +159,34 @@ class TestETAEngine:
         assert time > 5.0
 
 
+class TestRouteGenerator:
+    """Tests for complete turn-by-turn route instructions."""
+
+    def test_transfer_walk_is_included_in_instructions(self):
+        route = RouteResult(
+            segments=[
+                RouteSegment(
+                    mode=TransportMode.TRANSFER,
+                    board_at="City College",
+                    alight_at="Arayat Boulevard",
+                    distance_m=135,
+                ),
+            ],
+        )
+
+        instructions = RouteGenerator().generate_instructions(route)
+
+        assert instructions == [
+            {
+                "step": 1,
+                "instruction": (
+                    "Walk 140 meters to Arayat Boulevard to transfer."
+                ),
+                "mode": "walk",
+            },
+        ]
+
+
 class TestRouteCorrectness:
     """Tests that verify route endpoint correctness and ordering."""
 
@@ -279,4 +306,3 @@ class TestRouteCorrectness:
         assert fwd.segments[-1].nodes[-1] == "b"
         assert rev.segments[0].nodes[0] == "b"
         assert rev.segments[-1].nodes[-1] == "a"
-
