@@ -19,6 +19,13 @@ PLACES_AUTOCOMPLETE_URL = "https://maps.googleapis.com/maps/api/place/autocomple
 PLACES_DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json"
 GEOCODING_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 
+_SERVICE_BOUNDS = {
+    "south": 15.08,
+    "west": 120.48,
+    "north": 15.22,
+    "east": 120.65,
+}
+
 
 class GooglePlacesService:
     """
@@ -55,6 +62,7 @@ class GooglePlacesService:
             "location": self.location_bias,
             "radius": self.radius,
             "components": "country:ph",
+            "strictbounds": "true",
             "language": "en",
         }
         if session_token:
@@ -71,6 +79,58 @@ class GooglePlacesService:
             raise ExternalServiceError("Google Places", data.get("error_message", "Unknown error"))
 
         return data.get("predictions", [])
+
+    async def place_details(
+        self,
+        place_id: str,
+        session_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Resolve a Google place ID to an exact coordinate inside Tuki's area."""
+        params: dict[str, Any] = {
+            "place_id": place_id,
+            "fields": "place_id,name,formatted_address,geometry",
+            "key": self.api_key,
+            "language": "en",
+        }
+        if session_token:
+            params["sessiontoken"] = session_token
+
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.get(PLACES_DETAILS_URL, params=params)
+
+        if response.status_code != 200:
+            raise ExternalServiceError(
+                "Google Places",
+                f"HTTP {response.status_code}",
+            )
+
+        data = response.json()
+        if data.get("status") != "OK":
+            raise ExternalServiceError(
+                "Google Places",
+                data.get("error_message", data.get("status", "Unknown error")),
+            )
+
+        result = data["result"]
+        location = result["geometry"]["location"]
+        latitude = float(location["lat"])
+        longitude = float(location["lng"])
+        if not (
+            _SERVICE_BOUNDS["south"] <= latitude <= _SERVICE_BOUNDS["north"]
+            and _SERVICE_BOUNDS["west"] <= longitude <= _SERVICE_BOUNDS["east"]
+        ):
+            raise ExternalServiceError(
+                "Google Places",
+                "Selected place is outside the Tuki service area",
+            )
+
+        return {
+            "place_id": result.get("place_id", place_id),
+            "name": result.get("name", result.get("formatted_address", "Selected place")),
+            "formatted_address": result.get("formatted_address"),
+            "latitude": latitude,
+            "longitude": longitude,
+        }
 
     async def geocode(
         self,

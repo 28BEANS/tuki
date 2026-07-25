@@ -27,6 +27,16 @@ async def autocomplete(
     return {"predictions": predictions}
 
 
+@router.get("/details")
+async def place_details(
+    place_id: str = Query(..., min_length=1, description="Google place ID"),
+    session_token: str | None = Query(None, description="Session token for billing"),
+) -> dict:
+    """Resolve an autocomplete result to its exact name and coordinates."""
+    service = GooglePlacesService()
+    return await service.place_details(place_id, session_token)
+
+
 @router.get("/geocode")
 async def geocode(
     address: str | None = Query(None, description="Address for forward geocoding"),
