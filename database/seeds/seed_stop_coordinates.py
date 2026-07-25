@@ -8,38 +8,29 @@ and seeds transfer points between intersecting jeepney routes to enable full mul
 import asyncio
 import logging
 import os
-import uuid
+
 import asyncpg
 
 logger = logging.getLogger("tuki.seeds.coordinates")
 
 STOP_COORDS = {
     # Main Gate - Friendship (Sand)
-
     # C'Point - Balibago - H'way (Grey)
-
     # SM City - Main Gate - Dau (Various)
-
     # Checkpoint - Hensonville - Holy (White)
-
     # Sapang Bato - Angeles (Maroon)
-
     # Checkpoint - Holy - Highway (Lavender)
-
     # Marisol - Pampang (Green)
-
     # Pandang - Pampang (Blue)
-
     # Sunset - Nepo (Orange)
-
     # Villa - Pampang - SM Telebestagen (Yellow)
-
     # Capaya - Angeles (Pink)
     "1976 Initial": (15.1260, 120.5700),
     "21st Street": (15.1550, 120.5720),
     "AUF": (15.1380, 120.5910),
     "Anunas": (15.1480, 120.5700),
     "Arayat Boulevard": (15.1380, 120.5850),
+    "Bale Herencia": (15.133564, 120.591951),
     "Carmenville": (15.1350, 120.5680),
     "Champaca": (15.1250, 120.5800),
     "Checkpoint": (15.1640, 120.5680),
@@ -54,6 +45,7 @@ STOP_COORDS = {
     "Friendship Highway": (15.1500, 120.5600),
     "Hensonville": (15.1480, 120.5750),
     "Holy Angel University": (15.1285, 120.5970),
+    "Holy": (15.134258, 120.590159),
     "Jenra Mall": (15.1370, 120.5915),
     "Johnnies": (15.1600, 120.5750),
     "Jumbo Jenra": (15.1780, 120.5800),
@@ -89,12 +81,32 @@ STOP_COORDS = {
 
 # Transfers between routes at shared hubs
 TRANSFERS = [
-    ("Main Gate – Friendship", "Checkpoint – Hensonville – Holy", "Checkpoint", "jeep_jeep"),
-    ("SM City – Main Gate – Dau", "Checkpoint – Holy – Highway", "Main Gate", "jeep_jeep"),
+    (
+        "Main Gate – Friendship",
+        "Checkpoint – Hensonville – Holy",
+        "Checkpoint",
+        "jeep_jeep",
+    ),
+    (
+        "SM City – Main Gate – Dau",
+        "Checkpoint – Holy – Highway",
+        "Main Gate",
+        "jeep_jeep",
+    ),
     ("Checkpoint – Holy – Highway", "Sunset – Nepo", "Nepo Mart", "jeep_jeep"),
-    ("Checkpoint – Hensonville – Holy", "Checkpoint – Holy – Highway", "Holy Angel University", "jeep_jeep"),
+    (
+        "Checkpoint – Hensonville – Holy",
+        "Checkpoint – Holy – Highway",
+        "Holy Angel University",
+        "jeep_jeep",
+    ),
     ("Marisol – Pampang", "Checkpoint – Holy – Highway", "AUF", "jeep_jeep"),
-    ("Villa – Pampang – SM Telebestagen", "Checkpoint – Holy – Highway", "Holy Angel University", "jeep_jeep")
+    (
+        "Villa – Pampang – SM Telebestagen",
+        "Checkpoint – Holy – Highway",
+        "Holy Angel University",
+        "jeep_jeep",
+    ),
 ]
 
 
@@ -113,7 +125,9 @@ async def seed_coordinates(database_url: str) -> None:
                     updated_at = NOW()
                 WHERE stop_name = $3
                 """,
-                lat, lon, stop_name
+                lat,
+                lon,
+                stop_name,
             )
             if "UPDATE 1" in result:
                 updated_count += 1
@@ -142,13 +156,18 @@ async def seed_coordinates(database_url: str) -> None:
                     INSERT INTO transfer_points (id, name, geometry, from_route_id, to_route_id, transfer_type, created_at, updated_at)
                     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NOW(), NOW())
                     """,
-                    f"Transfer at {stop_name}", stop_geom, from_route_id, to_route_id, transfer_type
+                    f"Transfer at {stop_name}",
+                    stop_geom,
+                    from_route_id,
+                    to_route_id,
+                    transfer_type,
                 )
                 seeded_count += 1
             else:
                 logger.warning(
                     "Skipping transfer %s → %s: one or more entities not found",
-                    from_route, to_route
+                    from_route,
+                    to_route,
                 )
 
         logger.info("✓ Seeded %d transfer points", seeded_count)
