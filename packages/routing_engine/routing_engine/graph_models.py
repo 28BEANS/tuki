@@ -8,6 +8,9 @@ These are independent of SQLAlchemy models.
 from dataclasses import dataclass, field
 from enum import Enum
 
+JEEP_WAIT_TIME_MIN = 5.0
+TRANSFER_PENALTY_MIN = 2.0
+
 
 class TransportMode(str, Enum):
     """Available transport modes in the network."""
@@ -59,7 +62,13 @@ class TransportEdge:
 
     @property
     def weight_time(self) -> float:
-        """Weight for fastest-route optimization."""
+        """Weight for fastest-route optimization, including a route change."""
+        if self.mode == TransportMode.TRANSFER:
+            return (
+                self.travel_time_min
+                + TRANSFER_PENALTY_MIN
+                + JEEP_WAIT_TIME_MIN
+            )
         return self.travel_time_min
 
     @property

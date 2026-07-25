@@ -6,7 +6,13 @@ Estimates travel time per segment based on transport mode speeds.
 
 import logging
 
-from routing_engine.graph_models import RouteResult, RouteSegment, TransportMode
+from routing_engine.graph_models import (
+    JEEP_WAIT_TIME_MIN,
+    TRANSFER_PENALTY_MIN,
+    RouteResult,
+    RouteSegment,
+    TransportMode,
+)
 
 logger = logging.getLogger("tuki.routing.eta")
 
@@ -19,9 +25,7 @@ MODE_SPEEDS: dict[TransportMode, float] = {
 }
 
 # Additional time penalties in minutes
-JEEP_WAIT_TIME_MIN = 5.0       # Average wait for a jeep
 TRICYCLE_WAIT_TIME_MIN = 3.0   # Average wait for a tricycle
-TRANSFER_PENALTY_MIN = 2.0     # Penalty per transfer
 
 
 class ETAEngine:

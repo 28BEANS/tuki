@@ -7,6 +7,8 @@ from routing_engine.eta_engine import ETAEngine
 from routing_engine.fare_engine import FareEngine
 from routing_engine.graph_builder import TransportGraphBuilder
 from routing_engine.graph_models import (
+    JEEP_WAIT_TIME_MIN,
+    TRANSFER_PENALTY_MIN,
     RouteResult,
     RouteSegment,
     TransportEdge,
@@ -42,6 +44,9 @@ class TestGraphModels:
             source_id="a", target_id="b",
             mode=TransportMode.TRANSFER,
             distance_m=50, fare=0, travel_time_min=1.0,
+        )
+        assert edge.weight_time == (
+            1.0 + TRANSFER_PENALTY_MIN + JEEP_WAIT_TIME_MIN
         )
         assert edge.weight_transfers == 1.0
 

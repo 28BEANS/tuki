@@ -15,6 +15,8 @@ import logging
 import math
 from typing import TYPE_CHECKING
 
+from routing_engine.graph_models import JEEP_WAIT_TIME_MIN
+
 from app.schemas.routing import (
     NavigationInstruction,
     RouteRequest,
@@ -247,6 +249,12 @@ class RouteService:
 
             # Bidirectional walking edges
             for src, tgt in [(node_id, stop["id"]), (stop["id"], node_id)]:
+                routing_time = walk_time
+                if node_id == _VIRTUAL_ORIGIN and src == node_id:
+                    # The fastest-route weight must account for the first
+                    # jeep wait. ETAEngine already reports this wait in the
+                    # final duration; this only affects route selection.
+                    routing_time += JEEP_WAIT_TIME_MIN
                 graph.add_edge(
                     src,
                     tgt,
@@ -254,7 +262,7 @@ class RouteService:
                     distance_m=walk_dist,
                     fare=0.0,
                     travel_time_min=walk_time,
-                    weight_time=walk_time,
+                    weight_time=round(routing_time, 1),
                     weight_fare=0.0,
                     virtual=True,
                 )

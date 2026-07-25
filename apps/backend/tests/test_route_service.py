@@ -151,6 +151,28 @@ async def test_route_uses_exact_user_endpoints_without_mutating_cached_graph() -
     assert graph.number_of_edges() == original_edges
 
 
+def test_origin_connections_include_initial_jeep_wait_in_routing_weight() -> None:
+    graph = _build_graph()
+    service = RouteService(
+        _FakeGraphService(graph),  # type: ignore[arg-type]
+        _PassthroughGeometryService(),  # type: ignore[arg-type]
+    )
+
+    assert service._inject_virtual_node(
+        graph,
+        "virtual_origin",
+        15.1299,
+        120.5800,
+        "Your Location",
+    )
+
+    edge = min(
+        graph["virtual_origin"]["a"].values(),
+        key=lambda value: value["weight_time"],
+    )
+    assert edge["weight_time"] == edge["travel_time_min"] + 5.0
+
+
 @pytest.mark.anyio
 async def test_concurrent_routes_cannot_overwrite_each_others_endpoints() -> None:
     graph = _build_graph()

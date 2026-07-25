@@ -10,7 +10,11 @@ from typing import Any
 
 import networkx as nx
 
-from routing_engine.graph_models import TransportMode
+from routing_engine.graph_models import (
+    JEEP_WAIT_TIME_MIN,
+    TRANSFER_PENALTY_MIN,
+    TransportMode,
+)
 
 logger = logging.getLogger("tuki.routing.transfer")
 
@@ -96,7 +100,14 @@ class TransferEngine:
                     distance_m=t["distance_m"],
                     fare=0.0,
                     travel_time_min=round(walk_time, 1),
-                    weight_time=round(walk_time + 3.0, 1),  # Transfer penalty
+                    # A transfer includes the walk, transfer friction, and
+                    # the expected wait before boarding the next jeep.
+                    weight_time=round(
+                        walk_time
+                        + TRANSFER_PENALTY_MIN
+                        + JEEP_WAIT_TIME_MIN,
+                        1,
+                    ),
                     weight_fare=0.0,
                 )
                 count += 1
