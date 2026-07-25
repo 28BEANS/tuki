@@ -70,6 +70,18 @@ def _walk_time_min(distance_m: float) -> float:
     return round((distance_m / 1000) / WALK_SPEED_KMH * 60, 1)
 
 
+def _polyline_length_m(coordinates: list[list[float]]) -> float:
+    """Total distance along an ordered ``[lat, lon]`` polyline."""
+    return sum(
+        _haversine_m(source[0], source[1], target[0], target[1])
+        for source, target in zip(
+            coordinates,
+            coordinates[1:],
+            strict=False,
+        )
+    )
+
+
 class RouteService:
     """
     Service for multimodal route calculation.
@@ -294,11 +306,11 @@ class RouteService:
             logger.warning("No path found between origin and destination")
             return None
 
-        # Enrich with fare and ETA
+        # Geometry-aware fare and ETA engines. Walking distance is updated
+        # from the provider path before these values and instructions are
+        # calculated, so the visible line and quoted walk agree.
         fare_engine = FareEngine()
         eta_engine = ETAEngine()
-        fare_engine.calculate_total_fare(route_result, is_student=request.is_student)
-        eta_engine.estimate_total_time(route_result)
 
         # Virtual endpoints and shared transfer stops can create zero-metre
         # walking segments. They add duplicate markers and misleading
@@ -306,10 +318,6 @@ class RouteService:
         route_result.segments = [
             segment for segment in route_result.segments if segment.distance_m >= 1.0
         ]
-
-        # Generate instructions
-        generator = RouteGenerator()
-        raw_instructions = generator.generate_instructions(route_result)
 
         # Map routing engine segments → API schema segments (with road-following waypoints)
         segments: list[RouteSegment] = []
@@ -326,6 +334,14 @@ class RouteService:
             # Resolve road-following geometry while preserving exact graph
             # endpoints and the authoritative stop order.
             waypoints = await self._geometry_svc.get_geometry(raw_waypoints, seg.mode.value)
+            if seg.mode in (TransportMode.WALK, TransportMode.TRANSFER):
+                seg.distance_m = round(_polyline_length_m(waypoints), 1)
+
+            seg.fare = fare_engine.calculate_segment_fare(
+                seg,
+                is_student=request.is_student,
+            )
+            seg.duration_min = eta_engine.estimate_segment_time(seg)
 
             board_node = seg.nodes[0] if seg.nodes else None
             alight_node = seg.nodes[-1] if seg.nodes else None
@@ -372,6 +388,22 @@ class RouteService:
                         waypoints=waypoints if len(waypoints) >= 2 else None,
                     )
                 )
+
+        route_result.total_fare = round(
+            sum(segment.fare for segment in route_result.segments),
+            2,
+        )
+        route_result.total_distance_m = round(
+            sum(segment.distance_m for segment in route_result.segments),
+            1,
+        )
+        route_result.total_time_min = round(
+            sum(segment.duration_min for segment in route_result.segments),
+            1,
+        )
+
+        generator = RouteGenerator()
+        raw_instructions = generator.generate_instructions(route_result)
 
         # ── Connector segments: ensure route starts at Point A / ends at Point B ──
         self._ensure_endpoint_connectors(segments, origin_coord, dest_coord)

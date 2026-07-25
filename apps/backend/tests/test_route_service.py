@@ -70,6 +70,22 @@ class _PassthroughGeometryService:
         return [coordinate.copy() for coordinate in coordinates]
 
 
+class _DetourWalkGeometryService(_PassthroughGeometryService):
+    async def get_geometry(
+        self,
+        coordinates: list[list[float]],
+        mode: str,
+    ) -> list[list[float]]:
+        if mode == "walk" and len(coordinates) >= 2:
+            origin, destination = coordinates[0], coordinates[-1]
+            return [
+                origin.copy(),
+                [origin[0] + 0.001, origin[1] + 0.001],
+                destination.copy(),
+            ]
+        return await super().get_geometry(coordinates, mode)
+
+
 def _build_graph() -> nx.MultiDiGraph:
     nodes = [
         TransportNode(
@@ -171,6 +187,48 @@ def test_origin_connections_include_initial_jeep_wait_in_routing_weight() -> Non
         key=lambda value: value["weight_time"],
     )
     assert edge["weight_time"] == edge["travel_time_min"] + 5.0
+
+
+@pytest.mark.anyio
+async def test_walk_distance_and_eta_follow_rendered_geometry() -> None:
+    graph = _build_graph()
+    service = RouteService(
+        _FakeGraphService(graph),  # type: ignore[arg-type]
+        _DetourWalkGeometryService(),  # type: ignore[arg-type]
+    )
+    request = RouteRequest(
+        origin_lat=15.1299,
+        origin_lon=120.5800,
+        destination_lat=15.1551,
+        destination_lon=120.5920,
+    )
+
+    result = await service.calculate_route(request)
+
+    assert result is not None
+    walk_segments = [
+        segment for segment in result.segments if segment.mode == "walk"
+    ]
+    assert walk_segments
+    for segment in walk_segments:
+        assert segment.waypoints is not None
+        expected_distance = sum(
+            _haversine_m(*source, *target)
+            for source, target in zip(
+                segment.waypoints,
+                segment.waypoints[1:],
+                strict=False,
+            )
+        )
+        assert segment.distance_m == pytest.approx(expected_distance, abs=0.1)
+        assert segment.duration_min == pytest.approx(
+            (expected_distance / 1000) / 4.5 * 60,
+            abs=0.1,
+        )
+    assert result.total_distance_m == pytest.approx(
+        sum(segment.distance_m or 0 for segment in result.segments),
+        abs=0.1,
+    )
 
 
 @pytest.mark.anyio
