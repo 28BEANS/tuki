@@ -40,6 +40,29 @@ async def test_google_geometry_is_anchored_to_exact_user_coordinates() -> None:
 
 
 @pytest.mark.anyio
+async def test_coarse_intermediate_stops_are_not_forced_into_rendered_shape() -> None:
+    service = RoadGeometryService(google_api_key="test-key")
+    service._route_with_google = AsyncMock(  # type: ignore[method-assign]
+        return_value=[
+            [15.133078, 120.590011],
+            [15.167271, 120.580113],
+        ]
+    )
+    coordinates = [
+        [15.133078, 120.590011],
+        [15.140000, 120.620000],
+        [15.167271, 120.580113],
+    ]
+
+    await service.get_geometry(coordinates, "jeep")
+
+    service._route_with_google.assert_awaited_once_with(
+        [coordinates[0], coordinates[-1]],
+        "jeep",
+    )
+
+
+@pytest.mark.anyio
 async def test_implausible_provider_geometry_falls_back_to_ordered_anchors() -> None:
     service = RoadGeometryService(google_api_key="test-key")
     service._route_with_google = AsyncMock(  # type: ignore[method-assign]

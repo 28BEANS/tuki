@@ -292,6 +292,13 @@ class RouteService:
         fare_engine.calculate_total_fare(route_result, is_student=request.is_student)
         eta_engine.estimate_total_time(route_result)
 
+        # Virtual endpoints and shared transfer stops can create zero-metre
+        # walking segments. They add duplicate markers and misleading
+        # instructions without contributing any geometry.
+        route_result.segments = [
+            segment for segment in route_result.segments if segment.distance_m >= 1.0
+        ]
+
         # Generate instructions
         generator = RouteGenerator()
         raw_instructions = generator.generate_instructions(route_result)

@@ -53,21 +53,37 @@ class RoadGeometryService:
         if len(anchors) < 2:
             return anchors
 
+        # Stop coordinates define graph topology, fares, and boarding order,
+        # but they are not a surveyed route shape. Passing every coarse stop
+        # as a provider waypoint creates artificial loops and backtracking.
+        # Until authoritative route polylines exist, let the road provider
+        # produce a clean path between the selected board/alight endpoints.
+        provider_anchors = [anchors[0], anchors[-1]]
         geometry: list[list[float]] | None = None
 
         if self._google_api_key:
-            geometry = await self._route_with_google(anchors, mode)
-            if geometry and not _is_plausible_geometry(geometry, anchors):
+            geometry = await self._route_with_google(provider_anchors, mode)
+            if geometry and not _is_plausible_geometry(
+                geometry,
+                provider_anchors,
+            ):
                 logger.warning("Discarding implausible Google route geometry")
                 geometry = None
 
         if geometry is None and mode not in ("walk", "transfer"):
-            geometry = await self._route_with_osrm(anchors)
-            if geometry and not _is_plausible_geometry(geometry, anchors):
+            geometry = await self._route_with_osrm(provider_anchors)
+            if geometry and not _is_plausible_geometry(
+                geometry,
+                provider_anchors,
+            ):
                 logger.warning("Discarding implausible OSRM route geometry")
                 geometry = None
 
-        return _anchor_geometry(geometry or anchors, anchors[0], anchors[-1])
+        return _anchor_geometry(
+            geometry or provider_anchors,
+            anchors[0],
+            anchors[-1],
+        )
 
     async def _route_with_google(
         self,
