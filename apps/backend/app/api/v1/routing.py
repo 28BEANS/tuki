@@ -2,7 +2,7 @@
 Tuki Backend — Routing Endpoint
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.schemas.routing import RouteRequest, RouteResponse
 from app.services.graph_service import graph_service
@@ -17,10 +17,23 @@ async def calculate_route(request: RouteRequest) -> RouteResponse:
     Calculate a multimodal route.
 
     Uses the in-memory transport graph built at startup.
-    Falls back to mock data if the graph is not available.
+    Returns HTTP 503 if the graph is unavailable, or HTTP 404 if no
+    route exists between the given origin and destination.
     """
     service = RouteService(graph_service)
-    return await service.calculate_route(request)
+
+    try:
+        result = await service.calculate_route(request)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No route found between the selected locations.",
+        )
+
+    return result
 
 
 @router.post("/graph/refresh")

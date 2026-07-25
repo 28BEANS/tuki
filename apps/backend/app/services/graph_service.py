@@ -6,21 +6,27 @@ builds the NetworkX routing graph once, and caches it in memory.
 All routing requests read from the cached graph instead of hitting the DB.
 """
 
+from __future__ import annotations
+
 import logging
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import networkx as nx
+from routing_engine.graph_builder import TransportGraphBuilder
+from routing_engine.graph_models import TransportEdge, TransportMode, TransportNode
+from routing_engine.transfer_engine import TransferEngine
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from app.db.session import async_session_factory
 from app.models.jeep_route import JeepRoute
 from app.models.jeep_route_stop import JeepRouteStop
-from app.models.jeep_stop import JeepStop
 from app.models.transfer_point import TransferPoint
-from routing_engine.graph_builder import TransportGraphBuilder
-from routing_engine.graph_models import TransportEdge, TransportMode, TransportNode
+
+if TYPE_CHECKING:
+    import networkx as nx
+
+    from app.models.jeep_stop import JeepStop
 
 logger = logging.getLogger("tuki.services.graph")
 
@@ -109,9 +115,7 @@ class GraphService:
                 self._graph.number_of_edges() if self._graph else 0,
             )
         except Exception as exc:
-            logger.warning(
-                "Graph initialisation failed — routing will use mock fallback: %s", exc
-            )
+            logger.warning("Graph initialisation failed — routing will use mock fallback: %s", exc)
             self._graph = None
             self._node_index = []
 
@@ -137,6 +141,26 @@ class GraphService:
         )
         return best["id"]
 
+    def find_nearby_nodes(
+        self, lat: float, lon: float, radius_m: float = 500.0
+    ) -> list[dict[str, Any]]:
+        """
+        Return all nodes within `radius_m` metres of (lat, lon).
+
+        Each entry is a dict with keys: id, lat, lon, distance_m.
+        Sorted by ascending distance. Used to inject virtual walking edges
+        from an arbitrary user location to the jeep stop network.
+        """
+        if not self._node_index:
+            return []
+        results = []
+        for n in self._node_index:
+            dist = _haversine_m(lat, lon, n["lat"], n["lon"])
+            if dist <= radius_m:
+                results.append({**n, "distance_m": round(dist, 1)})
+        results.sort(key=lambda r: r["distance_m"])
+        return results
+
     # ── Private builders ──────────────────────────────────────────────────────
 
     async def _build_graph(self) -> None:
@@ -151,13 +175,28 @@ class GraphService:
         # Build nodes + sequential jeep edges per route
         for route in routes:
             route_stops = sorted(route.route_stops, key=lambda rs: rs.sequence)
+
+            # Filter out stops with invalid coordinates (0,0 from incomplete seeding)
+            valid_route_stops = [
+                rs for rs in route_stops if rs.stop.latitude != 0.0 and rs.stop.longitude != 0.0
+            ]
+
+            if len(valid_route_stops) < 2:
+                logger.warning(
+                    "Route '%s' has fewer than 2 valid stops (%d) — skipping",
+                    route.route_name,
+                    len(valid_route_stops),
+                )
+                continue
+
             prev_stop: JeepStop | None = None
 
-            for route_stop in route_stops:
+            for route_stop in valid_route_stops:
                 stop: JeepStop = route_stop.stop
+                node_id = f"{stop.id}_{route.id}"
 
                 node = TransportNode(
-                    id=str(stop.id),
+                    id=node_id,
                     name=stop.stop_name,
                     latitude=stop.latitude,
                     longitude=stop.longitude,
@@ -168,70 +207,145 @@ class GraphService:
 
                 if prev_stop is not None:
                     dist = _haversine_m(
-                        prev_stop.latitude, prev_stop.longitude,
-                        stop.latitude, stop.longitude,
+                        prev_stop.latitude,
+                        prev_stop.longitude,
+                        stop.latitude,
+                        stop.longitude,
                     )
                     time_min = _travel_min(dist, TransportMode.JEEP)
                     fare = _jeep_fare(dist)
 
-                    edges.append(TransportEdge(
-                        source_id=str(prev_stop.id),
-                        target_id=str(stop.id),
-                        mode=TransportMode.JEEP,
-                        distance_m=round(dist, 1),
-                        fare=fare,
-                        travel_time_min=time_min,
-                        route_name=route.route_name,
-                        route_color=route.route_color,
-                    ))
+                    # Forward edge (A → B)
+                    edges.append(
+                        TransportEdge(
+                            source_id=f"{prev_stop.id}_{route.id}",
+                            target_id=node_id,
+                            mode=TransportMode.JEEP,
+                            distance_m=round(dist, 1),
+                            fare=fare,
+                            travel_time_min=time_min,
+                            route_name=route.route_name,
+                            route_color=route.route_color,
+                        )
+                    )
+
+                    # Reverse edge (B → A) — all routes are bidirectional
+                    edges.append(
+                        TransportEdge(
+                            source_id=node_id,
+                            target_id=f"{prev_stop.id}_{route.id}",
+                            mode=TransportMode.JEEP,
+                            distance_m=round(dist, 1),
+                            fare=fare,
+                            travel_time_min=time_min,
+                            route_name=route.route_name,
+                            route_color=route.route_color,
+                        )
+                    )
 
                 prev_stop = stop
 
-        # Build transfer edges — short walking edge between stops on diff routes
+            logger.info(
+                "Route '%s' (%s): %d stops, %d edges",
+                route.route_name,
+                route.route_color,
+                len(valid_route_stops),
+                (len(valid_route_stops) - 1) * 2,  # bidirectional
+            )
+
+        # Build transfer edges — find nearest stops on each route to the
+        # transfer point, not just first/last stops.
         for tp in transfers:
             if not tp.from_route or not tp.to_route:
                 continue
 
-            # Find the last stop of from_route and first stop of to_route
-            # as proxy boarding/alighting points for the transfer
-            from_stops = sorted(
-                [rs for rs in tp.from_route.route_stops],
-                key=lambda rs: rs.sequence,
-            )
-            to_stops = sorted(
-                [rs for rs in tp.to_route.route_stops],
-                key=lambda rs: rs.sequence,
-            )
+            from_stops = [
+                rs.stop
+                for rs in tp.from_route.route_stops
+                if rs.stop.latitude != 0.0 and rs.stop.longitude != 0.0
+            ]
+            to_stops = [
+                rs.stop
+                for rs in tp.to_route.route_stops
+                if rs.stop.latitude != 0.0 and rs.stop.longitude != 0.0
+            ]
 
             if not from_stops or not to_stops:
                 continue
 
-            # Use nearest stop from each route relative to the transfer point
-            # We pick the last stop of from_route and first of to_route as a
-            # simple heuristic — sufficient until a spatial query is added.
-            from_stop = from_stops[-1].stop
-            to_stop = to_stops[0].stop
+            # Use the transfer point's own geometry to find the nearest stop
+            # on each route (instead of blindly using first/last).
+            # The transfer point's name contains the stop name (e.g. "Transfer at Checkpoint"),
+            # so we can also match by name as a strong signal.
+            tp_stop_name = (tp.name or "").replace("Transfer at ", "")
+
+            from_stop = next(
+                (stop for stop in from_stops if stop.stop_name == tp_stop_name),
+                None,
+            )
+            to_stop = next(
+                (stop for stop in to_stops if stop.stop_name == tp_stop_name),
+                None,
+            )
+            if from_stop is None or to_stop is None:
+                logger.warning(
+                    "Skipping invalid explicit transfer '%s': named stop must "
+                    "exist on both routes",
+                    tp.name,
+                )
+                continue
 
             dist = _haversine_m(
-                from_stop.latitude, from_stop.longitude,
-                to_stop.latitude, to_stop.longitude,
+                from_stop.latitude,
+                from_stop.longitude,
+                to_stop.latitude,
+                to_stop.longitude,
             )
             time_min = _travel_min(dist, TransportMode.TRANSFER)
 
-            edges.append(TransportEdge(
-                source_id=str(from_stop.id),
-                target_id=str(to_stop.id),
-                mode=TransportMode.TRANSFER,
-                distance_m=round(dist, 1),
-                fare=0.0,
-                travel_time_min=time_min,
-                route_name=None,
-                route_color=None,
-            ))
+            # Bidirectional transfer edges
+            for src, tgt in [
+                (
+                    f"{from_stop.id}_{tp.from_route_id}",
+                    f"{to_stop.id}_{tp.to_route_id}",
+                ),
+                (
+                    f"{to_stop.id}_{tp.to_route_id}",
+                    f"{from_stop.id}_{tp.from_route_id}",
+                ),
+            ]:
+                edges.append(
+                    TransportEdge(
+                        source_id=src,
+                        target_id=tgt,
+                        mode=TransportMode.TRANSFER,
+                        distance_m=round(dist, 1),
+                        fare=0.0,
+                        travel_time_min=time_min,
+                        route_name=None,
+                        route_color=None,
+                    )
+                )
+
+            logger.info(
+                "Transfer: %s ↔ %s via '%s' (%.0fm)",
+                tp.from_route.route_name,
+                tp.to_route.route_name,
+                tp_stop_name,
+                dist,
+            )
 
         # Build the graph
         builder = TransportGraphBuilder()
         self._graph = builder.build(nodes, edges)
+
+        # Automatically find and add transfer edges for stops near each other on different routes (within 150m)
+        logger.info(
+            "Automatically generating transfer edges between routes (max 150m walking radius)..."
+        )
+        transfer_engine = TransferEngine()
+        auto_transfers = transfer_engine.find_transfers(self._graph, max_walk_m=150.0)
+        transfer_engine.add_transfer_edges(self._graph, auto_transfers)
 
         # Build the flat node index for nearest-node lookups
         self._node_index = [
@@ -246,12 +360,8 @@ class GraphService:
     @staticmethod
     async def _load_routes(session: Any) -> list[JeepRoute]:
         """Eagerly load all routes with their ordered stops."""
-        stmt = (
-            select(JeepRoute)
-            .options(
-                joinedload(JeepRoute.route_stops)
-                .joinedload(JeepRouteStop.stop)
-            )
+        stmt = select(JeepRoute).options(
+            joinedload(JeepRoute.route_stops).joinedload(JeepRouteStop.stop)
         )
         result = await session.execute(stmt)
         return list(result.unique().scalars().all())
@@ -259,16 +369,13 @@ class GraphService:
     @staticmethod
     async def _load_transfers(session: Any) -> list[TransferPoint]:
         """Eagerly load all transfer points with both route relationships."""
-        stmt = (
-            select(TransferPoint)
-            .options(
-                joinedload(TransferPoint.from_route)
-                .joinedload(JeepRoute.route_stops)
-                .joinedload(JeepRouteStop.stop),
-                joinedload(TransferPoint.to_route)
-                .joinedload(JeepRoute.route_stops)
-                .joinedload(JeepRouteStop.stop),
-            )
+        stmt = select(TransferPoint).options(
+            joinedload(TransferPoint.from_route)
+            .joinedload(JeepRoute.route_stops)
+            .joinedload(JeepRouteStop.stop),
+            joinedload(TransferPoint.to_route)
+            .joinedload(JeepRoute.route_stops)
+            .joinedload(JeepRouteStop.stop),
         )
         result = await session.execute(stmt)
         return list(result.unique().scalars().all())

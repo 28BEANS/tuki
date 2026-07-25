@@ -20,43 +20,88 @@ logger = logging.getLogger("tuki.seeds.landmarks")
 # Format: (name, category, latitude, longitude, aliases)
 LANDMARKS = [
     # Schools
-    ("Holy Angel University", "school", 15.1285, 120.5970, ["HAU"]),
-    ("Angeles University Foundation", "school", 15.1380, 120.5910, ["AUF"]),
-    ("City College of Angeles", "school", 15.1390, 120.5760, ["City College"]),
-
+    ("Holy Angel University", "school", 15.133078, 120.590011, ["HAU"]),
+    (
+        "Angeles University Foundation",
+        "school",
+        15.145126,
+        120.594639,
+        ["AUF"],
+    ),
+    (
+        "City College of Angeles",
+        "school",
+        15.149849,
+        120.577912,
+        ["City College"],
+    ),
     # Malls
-    ("SM City Clark", "mall", 15.1688, 120.5773, ["SM Clark"]),
-    ("Jenra Mall", "mall", 15.1370, 120.5915, ["Jenra"]),
-    ("Nepo Mart", "mall", 15.1275, 120.5870, ["Nepo"]),
-    ("Robinsons Starmills", "mall", 15.1435, 120.5900, ["Robinsons", "Starmills"]),
-    ("Marquee Mall", "mall", 15.1510, 120.5850, ["Marquee"]),
-
+    ("SM City Clark", "mall", 15.167271, 120.580113, ["SM Clark"]),
+    ("Jenra Mall", "mall", 15.136131, 120.587859, ["Jenra"]),
+    ("Nepo Mart", "mall", 15.135000, 120.586792, ["Nepo"]),
+    (
+        "Robinsons Angeles",
+        "mall",
+        15.157257,
+        120.591559,
+        ["Robinsons", "Robinsons Balibago"],
+    ),
+    ("Marquee Mall", "mall", 15.162620, 120.609891, ["Marquee"]),
     # Hospitals
-    ("Angeles University Foundation Medical Center", "hospital", 15.1375, 120.5905, ["AUF Medical"]),
-    ("The Medical City Clark", "hospital", 15.1550, 120.5800, ["TMC Clark"]),
-    ("Sacred Heart Medical Center", "hospital", 15.1340, 120.5890, ["Sacred Heart"]),
-
+    (
+        "Angeles University Foundation Medical Center",
+        "hospital",
+        15.145193,
+        120.595076,
+        ["AUF Medical"],
+    ),
+    (
+        "The Medical City Clark",
+        "hospital",
+        15.178220,
+        120.572168,
+        ["TMC Clark"],
+    ),
+    (
+        "Sacred Heart Medical Center",
+        "hospital",
+        15.125397,
+        120.598447,
+        ["Sacred Heart"],
+    ),
     # Government
-    ("Angeles City Hall", "government", 15.1340, 120.5750, ["City Hall"]),
-
+    ("Angeles City Hall", "government", 15.165494, 120.608261, ["City Hall"]),
     # Churches
-    ("Holy Rosary Parish Church", "church", 15.1295, 120.5945, ["Holy Rosary"]),
-
+    (
+        "Holy Rosary Parish Church",
+        "church",
+        15.134258,
+        120.590159,
+        ["Holy Rosary"],
+    ),
     # Terminals
-    ("Dau Mabalacat Bus Terminal", "terminal", 15.1830, 120.5800, ["Dau Terminal", "Dau"]),
-    ("Main Gate Checkpoint", "terminal", 15.1640, 120.5680, ["Main Gate", "Checkpoint"]),
-
+    (
+        "Dau Mabalacat Bus Terminal",
+        "terminal",
+        15.177386,
+        120.589221,
+        ["Dau Terminal", "Dau"],
+    ),
+    (
+        "Main Gate Checkpoint",
+        "terminal",
+        15.166859,
+        120.582599,
+        ["Main Gate", "Checkpoint"],
+    ),
     # Markets
-    ("Pampang Market", "market", 15.1400, 120.5920, ["Pampang"]),
-
+    ("Pampang Market", "market", 15.147136, 120.584807, ["Pampang"]),
     # Restaurants & Food
-    ("Everybody's Cafe", "restaurant", 15.1430, 120.5870, ["Everybody's"]),
-
+    ("Everybody's Cafe", "restaurant", 15.135489, 120.587777, ["Everybody's"]),
     # Hotels
-    ("Swagman Hotel", "hotel", 15.1580, 120.5700, ["Swagman"]),
-
+    ("Swagman Hotel", "hotel", 15.144985, 120.588703, ["Swagman"]),
     # Parks
-    ("Timog Park", "park", 15.1520, 120.5630, ["Timog"]),
+    ("Timog Park", "park", 15.145248, 120.561925, ["Timog"]),
 ]
 
 
@@ -67,7 +112,7 @@ async def seed_landmarks(database_url: str) -> int:
 
     try:
         # Delete existing landmarks with these names to guarantee idempotency
-        names = [l[0] for l in LANDMARKS]
+        names = [landmark[0] for landmark in LANDMARKS]
         await conn.execute("DELETE FROM landmarks WHERE name = ANY($1)", names)
 
         for name, category, lat, lon, aliases in LANDMARKS:
@@ -80,7 +125,11 @@ async def seed_landmarks(database_url: str) -> int:
                     NOW(), NOW()
                 )
                 """,
-                name, aliases, category, lat, lon,
+                name,
+                aliases,
+                category,
+                lat,
+                lon,
             )
             count += 1
 

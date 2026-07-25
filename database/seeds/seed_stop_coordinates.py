@@ -8,102 +8,105 @@ and seeds transfer points between intersecting jeepney routes to enable full mul
 import asyncio
 import logging
 import os
-import uuid
+
 import asyncpg
 
 logger = logging.getLogger("tuki.seeds.coordinates")
 
 STOP_COORDS = {
     # Main Gate - Friendship (Sand)
-    "Main Gate": (15.1688, 120.5773),
-    "Checkpoint": (15.1640, 120.5680),
-    "Don Juico Avenue": (15.1580, 120.5650),
-    "Friendship Highway": (15.1500, 120.5600),
-
     # C'Point - Balibago - H'way (Grey)
-    "Fields Avenue": (15.1620, 120.5720),
-    "Johnnies": (15.1600, 120.5750),
-    "Marlim": (15.1550, 120.5800),
-    "SR Lim": (15.1500, 120.5850),
-    "Robinsons": (15.1435, 120.5900),
-    "Crossing": (15.1410, 120.5920),
-    "Richtofen": (15.1380, 120.5930),
-    "Pampang": (15.1400, 120.5920),
-    "San Nicolas": (15.1350, 120.5940),
-    "Rizal": (15.1300, 120.5950),
-    "Jenra Mall": (15.1370, 120.5915),
-    "Plaridel": (15.1270, 120.5980),
-
     # SM City - Main Gate - Dau (Various)
-    "First Street": (15.1680, 120.5780),
-    "MacArthur Highway": (15.1720, 120.5790),
-    "Jumbo Jenra": (15.1780, 120.5800),
-    "Dau": (15.1830, 120.5800),
-    "Mabalacat Bus Terminal": (15.1850, 120.5800),
-
     # Checkpoint - Hensonville - Holy (White)
-    "Narciso Street": (15.1600, 120.5690),
-    "21st Street": (15.1550, 120.5720),
-    "Hensonville": (15.1480, 120.5750),
-    "Arayat Boulevard": (15.1380, 120.5850),
-    "Holy Angel University": (15.1285, 120.5970),
-
     # Sapang Bato - Angeles (Maroon)
-    "Sapang Bato": (15.1450, 120.5100),
-    "Margot": (15.1480, 120.5300),
-    "Friendship": (15.1500, 120.5600),
-    "Anunas": (15.1480, 120.5700),
-    "Timog Park": (15.1520, 120.5630),
-    "Carmenville": (15.1350, 120.5680),
-    "City College": (15.1390, 120.5760),
-    "Kalayaan": (15.1330, 120.5800),
-    "Pampang Market": (15.1400, 120.5920),
-
     # Checkpoint - Holy - Highway (Lavender)
-    "SM City Clark": (15.1688, 120.5773),
-    "1st Street": (15.1680, 120.5780),
-    "Marisol": (15.1450, 120.5920),
-    "AUF": (15.1380, 120.5910),
-    "Kuliat": (15.1330, 120.5930),
-    "Lakandula": (15.1310, 120.5940),
-    "HAU": (15.1285, 120.5970),
-    "Holy": (15.1285, 120.5970),
-    "Richtofen Crossing": (15.1380, 120.5930),
-
     # Marisol - Pampang (Green)
-    "Magalang": (15.1500, 120.6100),
-
     # Pandang - Pampang (Blue)
-    "City Hall": (15.1340, 120.5750),
-    "Mining": (15.1300, 120.5800),
-    "Pamintuan Residence": (15.1280, 120.5960),
-
     # Sunset - Nepo (Orange)
-    "Sunset": (15.1280, 120.5600),
-    "1976 Initial": (15.1260, 120.5700),
-    "Champaca": (15.1250, 120.5800),
-    "Nepo Mart": (15.1275, 120.5870),
-
     # Villa - Pampang - SM Telebestagen (Yellow)
-    "L&S": (15.1350, 120.6050),
-    "Villa Angela": (15.1320, 120.6020),
-    "Villa Gloria": (15.1300, 120.6000),
-    "Villa Angelina": (15.1290, 120.5990),
-    "Bale Herencia": (15.1285, 120.5970),
-
     # Capaya - Angeles (Pink)
-    "Citicenter": (15.1380, 120.6050),
+    "1976 Initial": (15.1260, 120.5700),
+    "21st Street": (15.165710, 120.578999),
+    "AUF": (15.145126, 120.594639),
+    "Anunas": (15.156127, 120.542301),
+    "Arayat Boulevard": (15.149397, 120.579082),
+    "Bale Herencia": (15.133564, 120.591951),
+    "Carmenville": (15.142170, 120.570361),
+    "Champaca": (15.125720, 120.588278),
+    "Checkpoint": (15.166859, 120.582599),
+    "Citicenter": (15.151004, 120.612077),
+    "City College": (15.149849, 120.577912),
+    "City Hall": (15.165494, 120.608261),
+    "Crossing": (15.147175, 120.589446),
+    "Dau": (15.177386, 120.589221),
+    "Don Juico Avenue": (15.166466, 120.562779),
+    "Fields Avenue": (15.167229, 120.586376),
+    "First Street": (15.1680, 120.5780),
+    "Friendship Highway": (15.1500, 120.5600),
+    "Hensonville": (15.158876, 120.581788),
+    "Holy Angel University": (15.133078, 120.590011),
+    "Holy": (15.134258, 120.590159),
+    "Jenra Mall": (15.136131, 120.587859),
+    "Johnnies": (15.166230, 120.589911),
+    "Jumbo Jenra": (15.1780, 120.5800),
+    "Kalayaan": (15.142764, 120.582988),
+    "Kuliat": (15.140618, 120.591729),
+    "L&S": (15.121758, 120.596122),
+    "Lakandula": (15.134772, 120.592729),
+    "Mabalacat Bus Terminal": (15.177386, 120.589221),
+    "MacArthur Highway": (15.147250, 120.594292),
+    "Magalang": (15.160564, 120.609918),
+    "Main Gate": (15.167119, 120.584410),
+    "Margot": (15.170758, 120.534893),
+    "Marisol": (15.152434, 120.600490),
+    "Marlim": (15.162669, 120.592158),
+    "Mining": (15.140641, 120.609038),
+    "Narciso Street": (15.164460, 120.583304),
+    "Nepo Mart": (15.135000, 120.586792),
+    "Pamintuan Residence": (15.135789, 120.591448),
+    "Pampang Market": (15.147136, 120.584807),
+    "Plaridel": (15.137836, 120.588860),
+    "Richtofen Crossing": (15.150660, 120.583970),
+    "Rizal": (15.141692, 120.589246),
+    "Robinsons": (15.157257, 120.591559),
+    "SR Lim": (15.161106, 120.594963),
+    "San Nicolas": (15.138509, 120.586187),
+    "Sapang Bato": (15.1450, 120.5100),
+    "Sunset": (15.141037, 120.569584),
+    "Timog Park": (15.145248, 120.561925),
+    "Villa Angela": (15.125907, 120.596459),
+    "Villa Angelina": (15.131379, 120.592698),
+    "Villa Gloria": (15.128135, 120.590754),
 }
 
 # Transfers between routes at shared hubs
 TRANSFERS = [
-    # (from_route_name, to_route_name, stop_name, type)
-    ("Main Gate – Friendship", "Checkpoint – Hensonville – Holy", "Checkpoint", "jeep_jeep"),
-    ("SM City – Main Gate – Dau", "Checkpoint – Holy – Highway", "Main Gate", "jeep_jeep"),
+    (
+        "Main Gate – Friendship",
+        "Checkpoint – Hensonville – Holy",
+        "Checkpoint",
+        "jeep_jeep",
+    ),
+    (
+        "SM City – Main Gate – Dau",
+        "Checkpoint – Holy – Highway",
+        "Main Gate",
+        "jeep_jeep",
+    ),
     ("Checkpoint – Holy – Highway", "Sunset – Nepo", "Nepo Mart", "jeep_jeep"),
-    ("Checkpoint – Hensonville – Holy", "Checkpoint – Holy – Highway", "Holy Angel University", "jeep_jeep"),
+    (
+        "Checkpoint – Hensonville – Holy",
+        "Checkpoint – Holy – Highway",
+        "Holy Angel University",
+        "jeep_jeep",
+    ),
     ("Marisol – Pampang", "Checkpoint – Holy – Highway", "AUF", "jeep_jeep"),
-    ("Villa – Pampang – SM Telebestagen", "Checkpoint – Holy – Highway", "HAU", "jeep_jeep"),
+    (
+        "Villa – Pampang – SM Telebestagen",
+        "Checkpoint – Holy – Highway",
+        "Holy Angel University",
+        "jeep_jeep",
+    ),
 ]
 
 
@@ -122,7 +125,9 @@ async def seed_coordinates(database_url: str) -> None:
                     updated_at = NOW()
                 WHERE stop_name = $3
                 """,
-                lat, lon, stop_name
+                lat,
+                lon,
+                stop_name,
             )
             if "UPDATE 1" in result:
                 updated_count += 1
@@ -151,13 +156,18 @@ async def seed_coordinates(database_url: str) -> None:
                     INSERT INTO transfer_points (id, name, geometry, from_route_id, to_route_id, transfer_type, created_at, updated_at)
                     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NOW(), NOW())
                     """,
-                    f"Transfer at {stop_name}", stop_geom, from_route_id, to_route_id, transfer_type
+                    f"Transfer at {stop_name}",
+                    stop_geom,
+                    from_route_id,
+                    to_route_id,
+                    transfer_type,
                 )
                 seeded_count += 1
             else:
                 logger.warning(
                     "Skipping transfer %s → %s: one or more entities not found",
-                    from_route, to_route
+                    from_route,
+                    to_route,
                 )
 
         logger.info("✓ Seeded %d transfer points", seeded_count)

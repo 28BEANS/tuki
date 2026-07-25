@@ -13,7 +13,6 @@ Note:
 """
 
 import asyncio
-import json
 import logging
 import os
 
@@ -36,9 +35,19 @@ ROUTES = [
         "description": "Checkpoint through Fields, Balibago to Highway via Arayat Road.",
         "operating_direction": "bidirectional",
         "stops": [
-            "Checkpoint", "Fields Avenue", "Johnnies", "Marlim",
-            "SR Lim", "Robinsons", "Crossing", "Richtofen",
-            "Pampang", "San Nicolas", "Rizal", "Jenra Mall", "Plaridel",
+            "Checkpoint",
+            "Fields Avenue",
+            "Johnnies",
+            "Marlim",
+            "SR Lim",
+            "Robinsons",
+            "Crossing",
+            "Richtofen Crossing",
+            "Pampang Market",
+            "San Nicolas",
+            "Rizal",
+            "Jenra Mall",
+            "Plaridel",
         ],
     },
     {
@@ -47,8 +56,12 @@ ROUTES = [
         "description": "Runs from the Main Gate along First Street, MacArthur Highway to Jumbo Jenra, Dau, Mabalacat Bus Terminal.",
         "operating_direction": "bidirectional",
         "stops": [
-            "Main Gate", "First Street", "MacArthur Highway",
-            "Jumbo Jenra", "Dau", "Mabalacat Bus Terminal",
+            "Main Gate",
+            "First Street",
+            "MacArthur Highway",
+            "Jumbo Jenra",
+            "Dau",
+            "Mabalacat Bus Terminal",
         ],
     },
     {
@@ -57,8 +70,11 @@ ROUTES = [
         "description": "Runs from Narciso Street, through Hensonville, to Holy Angel University and vice versa.",
         "operating_direction": "bidirectional",
         "stops": [
-            "Narciso Street", "21st Street", "Hensonville",
-            "Arayat Boulevard", "Holy Angel University",
+            "Narciso Street",
+            "21st Street",
+            "Hensonville",
+            "Arayat Boulevard",
+            "Holy Angel University",
         ],
     },
     {
@@ -67,9 +83,15 @@ ROUTES = [
         "description": "Sapang Bato through Friendship to Pampang Market area.",
         "operating_direction": "bidirectional",
         "stops": [
-            "Sapang Bato", "Margot", "Friendship", "Anunas",
-            "Timog Park", "Carmenville", "City College",
-            "Kalayaan", "Pampang Market",
+            "Sapang Bato",
+            "Margot",
+            "Friendship Highway",
+            "Anunas",
+            "Timog Park",
+            "Carmenville",
+            "City College",
+            "Kalayaan",
+            "Pampang Market",
         ],
     },
     {
@@ -78,10 +100,22 @@ ROUTES = [
         "description": "SM City through Fields, Robinsons, AUF, Holy, to Richtofen Crossing.",
         "operating_direction": "bidirectional",
         "stops": [
-            "SM City Clark", "1st Street", "Fields Avenue", "Johnnies",
-            "Marlim", "SR Lim", "Robinsons", "Marisol", "AUF",
-            "Kuliat", "Lakandula", "HAU", "Holy", "Rizal",
-            "Pampang", "Richtofen Crossing",
+            "Main Gate",
+            "First Street",
+            "Fields Avenue",
+            "Johnnies",
+            "Marlim",
+            "SR Lim",
+            "Robinsons",
+            "Marisol",
+            "AUF",
+            "Kuliat",
+            "Lakandula",
+            "Holy Angel University",
+            "Holy",
+            "Rizal",
+            "Pampang Market",
+            "Richtofen Crossing",
         ],
     },
     {
@@ -90,9 +124,18 @@ ROUTES = [
         "description": "Marisol through AUF, Holy to Richtofen Crossing.",
         "operating_direction": "bidirectional",
         "stops": [
-            "Marisol", "Magalang", "AUF", "Kuliat", "Lakandula",
-            "HAU", "Holy", "Jenra Mall", "Plaridel",
-            "San Nicolas", "Pampang", "Richtofen Crossing",
+            "Marisol",
+            "Magalang",
+            "AUF",
+            "Kuliat",
+            "Lakandula",
+            "Holy Angel University",
+            "Holy",
+            "Jenra Mall",
+            "Plaridel",
+            "San Nicolas",
+            "Pampang Market",
+            "Richtofen Crossing",
         ],
     },
     {
@@ -101,8 +144,12 @@ ROUTES = [
         "description": "City Hall area through MacArthur to Plaridel.",
         "operating_direction": "bidirectional",
         "stops": [
-            "City Hall", "Mining", "MacArthur Highway",
-            "Kuliat", "Pamintuan Residence", "Plaridel",
+            "City Hall",
+            "Mining",
+            "MacArthur Highway",
+            "Kuliat",
+            "Pamintuan Residence",
+            "Plaridel",
         ],
     },
     {
@@ -110,9 +157,7 @@ ROUTES = [
         "route_color": "Orange",
         "description": "Sunset area through Carmenville to Nepo Mart.",
         "operating_direction": "bidirectional",
-        "stops": [
-            "Sunset", "1976 Initial", "Champaca", "Nepo Mart",
-        ],
+        "stops": ["Sunset", "1976 Initial", "Champaca", "Nepo Mart"],
     },
     {
         "route_name": "Villa – Pampang – SM Telebestagen",
@@ -120,10 +165,19 @@ ROUTES = [
         "description": "Villa Angela through Holy, Jenra Mall to Lakandula.",
         "operating_direction": "bidirectional",
         "stops": [
-            "L&S", "Villa Angela", "Villa Gloria", "Villa Angelina",
-            "Bale Herencia", "HAU", "Holy", "Jenra Mall",
-            "Rizal", "San Nicolas", "Plaridel",
-            "Pamintuan Residence", "Lakandula",
+            "L&S",
+            "Villa Angela",
+            "Villa Gloria",
+            "Villa Angelina",
+            "Bale Herencia",
+            "Holy Angel University",
+            "Holy",
+            "Jenra Mall",
+            "Rizal",
+            "San Nicolas",
+            "Plaridel",
+            "Pamintuan Residence",
+            "Lakandula",
         ],
     },
     {
@@ -132,8 +186,11 @@ ROUTES = [
         "description": "Capaya through Mining, MacArthur to Plaridel.",
         "operating_direction": "bidirectional",
         "stops": [
-            "Citicenter", "Mining", "MacArthur Highway",
-            "Kuliat", "Plaridel",
+            "Citicenter",
+            "Mining",
+            "MacArthur Highway",
+            "Kuliat",
+            "Plaridel",
         ],
     },
 ]
@@ -145,6 +202,12 @@ async def seed_jeep_routes(database_url: str) -> int:
     route_count = 0
 
     try:
+        # Clear existing data first to avoid orphaned stops/routes
+        logger.info("Clearing existing jeep routes, stops, and associations...")
+        await conn.execute(
+            "TRUNCATE TABLE jeep_route_stops, jeep_routes, jeep_stops CASCADE"
+        )
+
         for route_data in ROUTES:
             # Create a placeholder geometry (straight line will be replaced with real data)
             # For now, use a minimal valid geometry
@@ -189,11 +252,17 @@ async def seed_jeep_routes(database_url: str) -> int:
                     VALUES (gen_random_uuid(), $1, $2, $3)
                     ON CONFLICT DO NOTHING
                     """,
-                    route_id, stop_id, seq,
+                    route_id,
+                    stop_id,
+                    seq,
                 )
 
             route_count += 1
-            logger.info("Seeded route: %s (%s)", route_data["route_name"], route_data["route_color"])
+            logger.info(
+                "Seeded route: %s (%s)",
+                route_data["route_name"],
+                route_data["route_color"],
+            )
 
         logger.info("Successfully seeded %d jeepney routes", route_count)
 

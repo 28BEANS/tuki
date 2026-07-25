@@ -126,6 +126,15 @@ class RouteGenerator:
                     "mode": segment.mode.value,
                 })
 
+        elif segment.mode == TransportMode.TRANSFER:
+            distance_text = self._format_distance(segment.distance_m)
+            target = segment.alight_at or "the next boarding stop"
+            instructions.append({
+                "step": step,
+                "instruction": f"Walk {distance_text} to {target} to transfer.",
+                "mode": TransportMode.WALK.value,
+            })
+
         return instructions
 
     @staticmethod

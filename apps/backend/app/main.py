@@ -5,8 +5,8 @@ Hyperlocal commuting backend for Angeles City, Pampanga.
 """
 
 import logging
-from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +23,10 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
 )
+# Third-party HTTP INFO logs include full legacy Google Places query strings,
+# including API credentials. Keep provider traffic out of application logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("tuki")
 
 
